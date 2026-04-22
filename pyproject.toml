@@ -1,0 +1,12 @@
+[project]
+name = "emocoder"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.13.3",
+    "pydantic-settings>=2.14.0",
+    "torch>=2.11.0",
+    "transformers>=5.6.0",
+]
