@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
+
 from config import ModelConfig
-from types_shapes import BatchIDs, BatchMask, TokenEmbeds
+from ..types_shapes import BatchIDs, BatchMask, TokenEmbeds
 
 
 class EmoCoderCore(nn.Module):

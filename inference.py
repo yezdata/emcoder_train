@@ -1,3 +1,14 @@
+logits_samples = model.mc_forward(input_ids, mask, n_samples=10)
+mean_logits = results.mean(dim=0)  # Průměrná predikce pro každou větu v batchi
+std_logits = results.std(dim=0)
+
+probs = torch.sigmoid(logits_samples) # Pro GoEmotions (multi-label)
+mean_probs = probs.mean(dim=0)
+uncertainty = probs.std(dim=0)
+
+
+
+
 model.eval()              # 1. Celý model do eval módu (vypne LayerNorm update)
 model.set_mc_dropout(True) # 2. Selektivně zapne dropouty
 

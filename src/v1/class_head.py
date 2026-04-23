@@ -1,8 +1,9 @@
 import torch.nn as nn
 import torch
-from emocoder import EmoCoderCore
+
 from config import ModelConfig
-from types_shapes import BatchIDs, BatchMask, ClassLogits, MeanPooled, TokenEmbeds
+from .emocoder import EmoCoderCore
+from ..types_shapes import BatchIDs, BatchMask, ClassLogits, MeanPooled, TokenEmbeds
 
 
 class ClassificationHead(nn.Module):
@@ -18,7 +19,7 @@ class ClassificationHead(nn.Module):
         )
     
 
-    def set_mc_dropout(self, active: bool = True):
+    def _set_mc_dropout(self, active: bool = True):
         for m in self.modules():
             if isinstance(m, nn.Dropout):
                 m.train(active)
@@ -31,6 +32,20 @@ class ClassificationHead(nn.Module):
         sum_masked_features = masked_features.sum(dim=1)  # (B, D)
         count_tokens = torch.clamp(mask.sum(dim=1), min=1e-9)  # (B, 1)
         return sum_masked_features / count_tokens  # (B, D)
+
+
+    def mc_forward(self, x: BatchIDs, mask: BatchMask, n_samples: int) -> ClassLogits:
+        self._set_mc_dropout(active=True)
+
+        B, S = x.shape
+        x_stacked = x.repeat(n_samples, 1) # (n_samples * B, S)
+        mask_stacked = mask.repeat(n_samples, 1)
+
+        features = self.encoder(x_stacked, mask_stacked)
+        pooled = self._masked_mean_pooling(features, mask_stacked)
+        logits = self.class_head(pooled) # (n_samples * B, n_labels)
+
+        return logits.view(n_samples, B, -1)
 
 
     def forward(self, x: BatchIDs, mask: BatchMask) -> ClassLogits:

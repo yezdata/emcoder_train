@@ -16,6 +16,9 @@ class ModelConfig(BaseSettings):
 
 
 class TrainConfig(BaseSettings):
+    tokenized_ds_dir: str
+    save_path:str 
+
     lr: float
     lr_warmup: float 
 
@@ -24,4 +27,4 @@ class TrainConfig(BaseSettings):
     num_epochs: int
 
 
-    train_config = SettingsConfigDict(env_file=".env", env_prefix="TRAIN_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="TRAIN_")

@@ -1,7 +1,8 @@
 import torch.nn as nn
-from emocoder import EmoCoderCore
+
 from config import ModelConfig
-from types_shapes import BatchIDs, BatchMask, MLMLogits
+from .emocoder import EmoCoderCore
+from ..types_shapes import BatchIDs, BatchMask, MLMLogits
 
 
 class MLMHead(nn.Module):
