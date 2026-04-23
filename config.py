@@ -15,9 +15,9 @@ class ModelConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MODEL_")
 
 
-class TrainConfig(BaseSettings):
+class PretrainConfig(BaseSettings):
     tokenized_ds_dir: str
-    save_path:str 
+    save_path: str 
 
     lr: float
     lr_warmup: float 
@@ -28,3 +28,8 @@ class TrainConfig(BaseSettings):
 
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="TRAIN_")
+
+
+
+class FinetuneConfig(BaseSettings):
+    num_labels: int

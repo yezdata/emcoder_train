@@ -5,7 +5,7 @@ from transformers import RobertaTokenizerFast
 def main():
     ds = load_dataset("Skylion007/openwebtext", split="train")
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
-    max_seq_len = 514
+    max_seq_len = 512
 
     tokenized_ds = ds.map(
         lambda x: tokenizer(x["text"], padding=False, truncation=True, max_length=max_seq_len),

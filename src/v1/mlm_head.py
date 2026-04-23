@@ -10,10 +10,18 @@ class MLMHead(nn.Module):
         super().__init__()
 
         self.encoder = encoder
-        self.mlm_head = nn.Linear(config.d_model, config.vocab_size)
+
+        self.transform = nn.Sequential(
+            nn.Linear(config.d_model, config.d_model),
+            nn.GELU(),
+            nn.LayerNorm(config.d_model)
+        )
+
+        self.decoder = nn.Linear(config.d_model, config.vocab_size)
         # Weight tieing
-        self.mlm_head.weight = self.encoder.token_embedding.weight
+        self.decoder.weight = self.encoder.token_embedding.weight
         
     def forward(self, x: BatchIDs, mask: BatchMask) -> MLMLogits:
         features = self.encoder(x, mask)
-        return self.mlm_head(features)
+        features = self.transform(features)
+        return self.decoder(features)
