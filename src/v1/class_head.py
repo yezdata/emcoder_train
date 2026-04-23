@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch
 from emocoder import EmoCoderCore
 from config import ModelConfig
-from types_shapes import BatchIDs, Logits, MeanPooled, TokenEmbeds
+from types_shapes import BatchIDs, BatchMask, ClassLogits, MeanPooled, TokenEmbeds
 
 
 class ClassificationHead(nn.Module):
@@ -25,9 +25,7 @@ class ClassificationHead(nn.Module):
 
 
     @staticmethod
-    def _masked_mean_pooling(features: TokenEmbeds, mask: torch.Tensor) -> MeanPooled:
-        # features: (B, S, D)
-        # mask: (B, S)
+    def _masked_mean_pooling(features: TokenEmbeds, mask: BatchMask) -> MeanPooled:
         mask = mask.unsqueeze(-1)  # (B, S, 1)
         masked_features = features * mask  # (B, S, D)
         sum_masked_features = masked_features.sum(dim=1)  # (B, D)
@@ -35,8 +33,8 @@ class ClassificationHead(nn.Module):
         return sum_masked_features / count_tokens  # (B, D)
 
 
-    def forward(self, x: BatchIDs, mask: torch.Tensor) -> Logits:
+    def forward(self, x: BatchIDs, mask: BatchMask) -> ClassLogits:
         features = self.encoder(x, mask)
-        # mean pooling + padding mask
-        pooled = self._masked_mean_pooling(features, mask) # (B, S, D) -> (B, D)
+
+        pooled = self._masked_mean_pooling(features, mask)
         return self.class_head(pooled)

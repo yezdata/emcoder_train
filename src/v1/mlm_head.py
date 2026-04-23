@@ -1,7 +1,7 @@
 import torch.nn as nn
-import torch
 from emocoder import EmoCoderCore
 from config import ModelConfig
+from types_shapes import BatchIDs, BatchMask, MLMLogits
 
 
 class MLMHead(nn.Module):
@@ -13,6 +13,6 @@ class MLMHead(nn.Module):
         # Weight tieing
         self.mlm_head.weight = self.encoder.token_embedding.weight
         
-    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: BatchIDs, mask: BatchMask) -> MLMLogits:
         features = self.encoder(x, mask)
         return self.mlm_head(features)
