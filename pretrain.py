@@ -1,31 +1,18 @@
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-import json
 from accelerate import Accelerator
 from transformers import RobertaTokenizerFast, DataCollatorForLanguageModeling, get_cosine_schedule_with_warmup
 from datasets import load_from_disk
 
-from config import ModelConfig, PretrainConfig
+from src.config_models import ModelConfig, PretrainConfig
 from src.types_shapes import MLMLabels, MLMLogits
-from src.utils import save_encoder
-from src.v1.emocoder import EmoCoderCore
+from src.utils import save_encoder, init_weights
+from src.v1.emcoder_core import EmCoderCore
 from src.v1.mlm_head import MLMHead
 
 
 torch.manual_seed(1337)
-
-
-def init_weights(module):
-    if isinstance(module, nn.Linear):
-        nn.init.trunc_normal_(module.weight, std=0.02)
-        if module.bias is not None:
-            nn.init.zeros_(module.bias)
-    elif isinstance(module, nn.Embedding):
-        nn.init.trunc_normal_(module.weight, std=0.02)
-    elif isinstance(module, nn.LayerNorm):
-        nn.init.ones_(module.weight)
-        nn.init.zeros_(module.bias)
 
 
 
@@ -64,7 +51,7 @@ def main(save_path: str) -> None:
 
 
 
-    encoder = EmoCoderCore(model_config)
+    encoder = EmCoderCore(model_config)
     model = MLMHead(encoder, model_config)
 
     model.apply(init_weights)
@@ -95,8 +82,8 @@ def main(save_path: str) -> None:
     )
 
 
-    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
-        model, optimizer, train_dataloader, eval_dataloader
+    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
     )
 
 

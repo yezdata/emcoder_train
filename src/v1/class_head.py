@@ -1,13 +1,13 @@
 import torch.nn as nn
 import torch
 
-from config import ClassifierConfig
-from .emocoder import EmoCoderCore
+from .emcoder_core import EmCoderCore
+from ..config_models import ClassifierConfig
 from ..types_shapes import BatchIDs, BatchMask, ClassLogits, ClassLogitsMC, MeanPooled, TokenEmbeds
 
 
 class ClassificationHead(nn.Module):
-    def __init__(self, encoder: EmoCoderCore, config: ClassifierConfig, n_labels: int):
+    def __init__(self, encoder: EmCoderCore, config: ClassifierConfig):
         super().__init__()
 
         self.encoder = encoder
@@ -16,7 +16,7 @@ class ClassificationHead(nn.Module):
             nn.Linear(config.d_model, config.d_model),
             nn.GELU(),
             nn.Dropout(config.dropout),
-            nn.Linear(config.d_model, n_labels)
+            nn.Linear(config.d_model, config.num_labels)
         )
     
 
@@ -44,7 +44,7 @@ class ClassificationHead(nn.Module):
 
         features = self.encoder(x_stacked, mask_stacked)
         pooled = self._masked_mean_pooling(features, mask_stacked)
-        logits = self.classifier(pooled) # (n_samples * B, n_labels)
+        logits = self.classifier(pooled) # (n_samples * B, num_labels)
 
         return logits.view(n_samples, B, -1)
 

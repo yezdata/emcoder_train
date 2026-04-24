@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 
-from config import ModelConfig
+from ..config_models import ModelConfig
 from ..types_shapes import BatchIDs, BatchMask, TokenEmbeds
 
 
-class EmoCoderCore(nn.Module):
+class EmCoderCore(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
 

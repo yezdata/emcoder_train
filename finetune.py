@@ -8,22 +8,10 @@ from tqdm import tqdm
 from sklearn.metrics import f1_score, roc_auc_score
 
 from src.types_shapes import ClassLabels, ClassLogits
-from src.utils import save_emocoder
-from src.v1.emocoder import EmoCoderCore
+from src.utils import save_emcoder, init_weights
+from src.v1.emcoder_core import EmCoderCore
 from src.v1.class_head import ClassificationHead
-from config import ClassifierConfig, ModelConfig, FinetuneConfig
-
-
-def init_weights(module):
-    if isinstance(module, nn.Linear):
-        nn.init.trunc_normal_(module.weight, std=0.02)
-        if module.bias is not None:
-            nn.init.zeros_(module.bias)
-    elif isinstance(module, nn.Embedding):
-        nn.init.trunc_normal_(module.weight, std=0.02)
-    elif isinstance(module, nn.LayerNorm):
-        nn.init.ones_(module.weight)
-        nn.init.zeros_(module.bias)
+from src.config_models import ClassifierConfig, ModelConfig, FinetuneConfig
 
 
 
@@ -59,7 +47,8 @@ def compute_metrics(probs: np.ndarray, labels: np.ndarray) -> dict:
     return {
         "f1_macro": f1_score(labels, preds, average="macro", zero_division=0),
         "f1_micro": f1_score(labels, preds, average="micro", zero_division=0),
-        "roc_auc": roc_auc_score(labels, probs, average="macro", multi_class="ovr"),
+        # TODO: if raises error -> add: multi_class="ovr"
+        "roc_auc": roc_auc_score(labels, probs, average="macro")
     }
 
 
@@ -68,8 +57,8 @@ def evaluate_bayesian(criterion: WeightedBCEWithLogitsLoss, model: Classificatio
     total_loss = 0.0
     all_pred_probs = []
     all_labels = []
-    for batch in dataloader:
-        with torch.no_grad():
+    with torch.no_grad():
+        for batch in dataloader:
             logits_samples = model.mc_forward(batch["input_ids"], batch["attention_mask"], n_samples=5)
 
             loss = criterion.compute_bayesian_loss(logits_samples, batch["labels"])
@@ -77,10 +66,9 @@ def evaluate_bayesian(criterion: WeightedBCEWithLogitsLoss, model: Classificatio
             probs = torch.sigmoid(logits_samples)
             mean_probs = probs.mean(dim=0) # (B, num_labels)
 
-
-        all_pred_probs.append(mean_probs.cpu())
-        all_labels.append(batch["labels"].cpu())
-        total_loss += loss.item()
+            all_pred_probs.append(mean_probs.cpu())
+            all_labels.append(batch["labels"].cpu())
+            total_loss += loss.item()
 
     y_probs = torch.cat(all_pred_probs).numpy()
     y_true = torch.cat(all_labels).numpy()
@@ -94,8 +82,8 @@ def evaluate_bayesian(criterion: WeightedBCEWithLogitsLoss, model: Classificatio
 
 def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> None:
     encoder_lr = 1e-5 if bayesian_train else 2e-5
-    head_lr = 5e-5 if bayesian_train else 1e-3
-    # TODO, pokud model dava skoro stejne vysledky pro vsechny samples, zvednout model_config.dropout na 0.15 / 0.2
+    head_lr = 5e-4 if bayesian_train else 1e-3
+    # TODO if model give similar results for all samples, increase model_config.dropout to 0.15 / 0.2
     dropout_rate = 0.15 if bayesian_train else 0.1
 
 
@@ -113,17 +101,17 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> Non
     model_config.dropout = dropout_rate
 
 
-    train_config = FinetuneConfig(tokenized_ds_dir=f"data/goemotions_v1_seq{model_config.max_seq_len}", encoder_lr=encoder_lr, head_lr=head_lr, batch_size=32, gradient_accumulation_steps=8, num_epochs=10, lr_warmup=0.1, weight_decay=0.01)
+    train_config = FinetuneConfig(tokenized_ds_dir=f"data/goemotions_v1_seq{model_config.max_seq_len}", encoder_lr=encoder_lr, head_lr=head_lr, batch_size=16, gradient_accumulation_steps=16, num_epochs=10, lr_warmup=0.1, weight_decay=0.01)
 
 
     accelerator = Accelerator(mixed_precision="bf16", gradient_accumulation_steps=train_config.gradient_accumulation_steps)
 
 
-    encoder = EmoCoderCore(encoder_config)
-    encoder.load_state_dict(torch.load(f"{encoder_path}/encoder_only.pth"), strict=True)
+    encoder = EmCoderCore(encoder_config)
+    encoder.load_state_dict(torch.load(f"{encoder_path}/encoder_only.pth", map_location=accelerator.device), strict=True)
 
 
-    model = ClassificationHead(encoder, model_config, model_config.num_labels)
+    model = ClassificationHead(encoder, model_config)
 
     model.classifier.apply(init_weights)
 
@@ -164,8 +152,8 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> Non
     )
 
 
-    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
-        model, optimizer, train_dataloader, eval_dataloader
+    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
     )
 
 
@@ -173,14 +161,15 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> Non
     pos_counts = np.sum(np.array(tokenized_train_ds["labels"]), axis=0)
     neg_counts = len(tokenized_train_ds) - pos_counts
 
-    # NOTE: USE SQRT FOR NUM STABILITY
+    # NOTE: USE SQRT / LOG FOR NUM STABILITY
     # - 1e-5 avoid division by zero
-    raw_weights = np.sqrt((neg_counts + 1e-5) / (pos_counts + 1e-5))
+    # raw_weights = np.sqrt((neg_counts + 1e-5) / (pos_counts + 1e-5))
+    raw_weights = 1 + np.log((neg_counts + 1e-5) / (pos_counts + 1e-5))
+
     # PREVENT EXTREME WEIGTHS
-    raw_weights = np.clip(raw_weights, a_min=0.1, a_max=50.0)
+    raw_weights = np.clip(raw_weights, a_min=0.1, a_max=20.0)
     weights = torch.tensor(raw_weights, dtype=torch.float32)
-    # NORMALIZATION (mean=1)
-    weights = weights / weights.mean()
+
     print("Label Weights:", weights)
 
 
@@ -191,30 +180,32 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> Non
     criterion = WeightedBCEWithLogitsLoss(device=accelerator.device, pos_weights=weights)
     model.train()
 
+    # freeze encoder for first 500 steps
+    accelerator.unwrap_model(model).encoder.requires_grad_(False)
+
     for epoch in range(train_config.num_epochs):
         for step, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
+            if step == 500 and epoch == 0:
+                accelerator.unwrap_model(model).encoder.requires_grad_(True)
+                print("Unfreezing encoder weights")
+
             with accelerator.accumulate(model):
                 if bayesian_train:
                     logits_samples = model.mc_forward(batch["input_ids"], batch["attention_mask"], n_samples=5)
 
-                    if step % 50 == 0:
-                        avg_logits = logits_samples.mean().item()
-                        accelerator.print(f"Step {step} | Avg Logits: {avg_logits:.4f}")
+                    if step % 100 == 0:
+                        accelerator.print(f"Step {step} | Avg Logits: {logits_samples.mean().item():.4f}")
 
                     loss = criterion.compute_bayesian_loss(logits_samples, batch["labels"])
 
-                    accelerator.backward(loss)
-                    optimizer.step()
-                    lr_scheduler.step()
-                    optimizer.zero_grad()
                 else:
-                    outputs = model(batch["input_ids"], batch["attention_mask"])
-                    loss = criterion.compute_loss(outputs, batch["labels"])
+                    logits = model(batch["input_ids"], batch["attention_mask"])
+                    loss = criterion.compute_loss(logits, batch["labels"])
 
-                    accelerator.backward(loss)
-                    optimizer.step()
-                    lr_scheduler.step()
-                    optimizer.zero_grad()
+                accelerator.backward(loss)
+                optimizer.step()
+                lr_scheduler.step()
+                optimizer.zero_grad()
             
             if step % 150 == 0:
                 accelerator.print(f"Epoch {epoch + 1} | Step {step} | TRAIN  Loss: {loss.item():.4f}")
@@ -223,7 +214,7 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> Non
         eval_loss = evaluate_bayesian(criterion, model, eval_dataloader)
         accelerator.print(f"FINISH EPOCH {epoch + 1} | TRAIN Loss: {loss.item():.4f} | Eval Loss: {eval_loss:.4f}")
 
-        save_emocoder(accelerator, model, f"{save_path}/epoch_{epoch + 1}", model_config, train_config, tokenizer=tokenizer, loss=loss.item(), eval_loss=eval_loss)
+        save_emcoder(accelerator, model, f"{save_path}/epoch_{epoch + 1}", model_config, train_config, tokenizer=tokenizer, loss=loss.item(), eval_loss=eval_loss)
 
 
              
@@ -232,7 +223,7 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> Non
 
 
 if __name__ == "__main__":
-    SAVE_PATH = "models/v1/emocoder"
+    SAVE_PATH = "models/v1/emcoder"
     ENCODER_PATH = "models/v1/pretrain/checkpoints/epoch_2/step_40000"
     BAYESIAN_TRAIN = False
 

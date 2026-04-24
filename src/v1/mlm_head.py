@@ -1,12 +1,12 @@
 import torch.nn as nn
 
-from config import ModelConfig
-from .emocoder import EmoCoderCore
+from ..config_models import ModelConfig
+from .emcoder_core import EmCoderCore
 from ..types_shapes import BatchIDs, BatchMask, MLMLogits
 
 
 class MLMHead(nn.Module):
-    def __init__(self, encoder: EmoCoderCore, config: ModelConfig):
+    def __init__(self, encoder: EmCoderCore, config: ModelConfig):
         super().__init__()
 
         self.encoder = encoder

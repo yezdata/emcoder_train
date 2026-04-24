@@ -8,6 +8,20 @@ import os
 from pydantic_settings import BaseSettings
 
 
+
+def init_weights(module):
+    if isinstance(module, nn.Linear):
+        nn.init.trunc_normal_(module.weight, std=0.02)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+    elif isinstance(module, nn.Embedding):
+        nn.init.trunc_normal_(module.weight, std=0.02)
+    elif isinstance(module, nn.LayerNorm):
+        nn.init.ones_(module.weight)
+        nn.init.zeros_(module.bias)
+
+
+
 def save_encoder(accelerator: Accelerator, model: nn.Module, save_path: str, model_config: BaseSettings, train_config: BaseSettings, loss: float | None = None, eval_loss: float | None = None) -> None:
     os.makedirs(save_path, exist_ok=True)
 
@@ -29,7 +43,7 @@ def save_encoder(accelerator: Accelerator, model: nn.Module, save_path: str, mod
             json.dump({"train_loss": loss, "eval_loss": eval_loss}, f)
 
 
-def save_emocoder(accelerator: Accelerator, model: nn.Module, save_path: str, model_config: BaseSettings, train_config: BaseSettings, tokenizer: RobertaTokenizerFast, loss: float | None = None, eval_loss: float | None = None) -> None:
+def save_emcoder(accelerator: Accelerator, model: nn.Module, save_path: str, model_config: BaseSettings, train_config: BaseSettings, tokenizer: RobertaTokenizerFast, loss: float | None = None, eval_loss: float | None = None) -> None:
     os.makedirs(save_path, exist_ok=True)
 
     # SAVE ONLY WHOLE MODEL
