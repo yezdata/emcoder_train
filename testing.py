@@ -5,6 +5,8 @@ from datasets import load_from_disk
 from transformers import RobertaTokenizerFast, DataCollatorWithPadding
 from accelerate import Accelerator
 from tqdm import tqdm
+import os
+import pandas as pd
 from sklearn.metrics import classification_report, multilabel_confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -15,8 +17,30 @@ from src.v1.class_head import ClassificationHead
 from src.v1.emcoder_core import EmCoderCore
 
 
+def plot_uncertainty_ridge(epistemic_unc, label_names):
+    plt.figure(figsize=(12, 16)) 
+    
+    df = pd.DataFrame(epistemic_unc, columns=label_names)
+    df_melted = df.melt(var_name='Emotion', value_name='Uncertainty')
+    
+    
+    sns.violinplot(data=df_melted, x='Uncertainty', y='Emotion', 
+                orient='h', cut=0, scale='width', inner='quartile')
+    plt.title("Distribution of Epistemic Uncertainty per Emotion")
+    plt.tight_layout()
+    plt.savefig("plots/epistemic_unc_violin.png")
+    plt.close()
+
+
 
 def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
+    os.makedirs("plots/each_label", exist_ok=True)
+
+
+    plt.rcParams["figure.figsize"] = (14, 10)
+    sns.set_theme(style="whitegrid")
+
+
     accelerator = Accelerator(mixed_precision="bf16")
 
     with open(f"{emcoder_path}/model_config.json", "r") as f:
@@ -35,6 +59,7 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
     )
 
     tokenized_test_ds = load_from_disk(f"{tokenized_ds_dir}/test")
+    tokenized_test_ds = tokenized_test_ds.select(range(50))
 
     test_dataloader = torch.utils.data.DataLoader(tokenized_test_ds, batch_size=32, collate_fn=data_collator, shuffle=False, num_workers=8, pin_memory=True)
 
@@ -122,6 +147,7 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
                 xticklabels=label_names, yticklabels=label_names)
     plt.title("Multi-label Confusion Matrix (% of times label j predicted when i is true)")
     plt.savefig("plots/confusion_matrix.png")
+    plt.close()
 
 
 
@@ -135,19 +161,21 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
     plt.xlabel("Epistemic Uncertainty")
     plt.ylabel("Mean Predicted Probability")
     plt.savefig("plots/epistemic_unc_scatter.png")
+    plt.close()
 
 
 
-    sns.scatterplot(x=aleatoric_unc.flatten(), y=mean_probs.flatten(), alpha=0.5)
+
+    sns.scatterplot(x=aleatoric_unc.flatten(), y=mean_probs.max(axis=-1), alpha=0.5)
     plt.xlabel("Aleatoric Uncertainty")
-    plt.ylabel("Mean Predicted Probability")
+    plt.ylabel("Max Mean Predicted Probability")
     plt.savefig("plots/aleatoric_unc_scatter.png")
+    plt.close()
 
 
 
-    sns.histplot(epistemic_unc, bins=50, kde=True, color='teal')
-    plt.xlabel("Epistemic Uncertainty")
-    plt.savefig("plots/epistemic_unc_hist.png")
+    plot_uncertainty_ridge(epistemic_unc, label_names)
+
 
 
 

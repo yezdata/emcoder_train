@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import model_validator, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,18 +15,28 @@ class ModelConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MODEL_")
 
+
+
 class ClassifierConfig(ModelConfig):
     num_labels: int
-    id2label: dict
-    label2id: dict
+    id2label: dict[int, str]
+    label2id: dict[str, int]
 
     base_encoder_path: str
+
+
+    @field_validator("id2label", mode="before")
+    @classmethod
+    def coerce_keys_to_int(cls, v):
+        return {int(k): val for k, val in v.items()}
 
     @model_validator(mode='after')
     def check_consistency(self):
         if len(self.id2label) != self.num_labels:
             raise ValueError("num_labels does not match id2label dictionary len")
         return self
+
+
 
 
 class PretrainConfig(BaseSettings):
@@ -42,7 +52,7 @@ class PretrainConfig(BaseSettings):
     num_epochs: int
 
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="TRAIN_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="PRETRAIN_")
 
 
 
@@ -58,3 +68,5 @@ class FinetuneConfig(BaseSettings):
     batch_size: int
     gradient_accumulation_steps: int
     num_epochs: int
+
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="FINETUNE_")

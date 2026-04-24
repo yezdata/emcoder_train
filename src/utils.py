@@ -38,7 +38,7 @@ def save_encoder(accelerator: Accelerator, model: nn.Module, save_path: str, mod
         f.write(train_config.model_dump_json())
     
 
-    if loss and eval_loss:
+    if loss is not None and eval_loss is not None:
         with open(f"{save_path}/model_state.json", "w") as f:
             json.dump({"train_loss": loss, "eval_loss": eval_loss}, f)
 
@@ -56,6 +56,6 @@ def save_emcoder(accelerator: Accelerator, model: nn.Module, save_path: str, mod
     with open(f"{save_path}/train_config.json", "w") as f:
         f.write(train_config.model_dump_json()) 
     
-    if loss and eval_loss:
+    if loss is not None and eval_loss is not None:
         with open(f"{save_path}/model_state.json", "w") as f:
             json.dump({"train_loss": loss, "eval_loss": eval_loss}, f)
