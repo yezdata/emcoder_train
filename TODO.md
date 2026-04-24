@@ -1,5 +1,6 @@
 # Diagram architektury modelu - jak na GH tak do prezentace
-
+# diagram postupu práce 
+- pretrain -> fine-tune -> testing atd..
 
 
 # Class training - GoEmotions
