@@ -1,3 +1,8 @@
+test_data = load_dataset("json", data_files={"test": "data/test_data.jsonl"})["test"]
+
+
+
+
 logits_samples = model.mc_forward(input_ids, mask, n_samples=10)
 mean_logits = results.mean(dim=0)  # Průměrná predikce pro každou větu v batchi
 std_logits = results.std(dim=0)

@@ -8,6 +8,7 @@ from datasets import load_from_disk
 
 from config import ModelConfig, PretrainConfig
 from src.types_shapes import MLMLabels, MLMLogits
+from src.utils import save_encoder
 from src.v1.emocoder import EmoCoderCore
 from src.v1.mlm_head import MLMHead
 
@@ -33,7 +34,7 @@ def compute_loss(criterion: nn.CrossEntropyLoss, logits: MLMLogits, labels: MLML
     return criterion(logits.view(B * S, V), labels.view(-1))
 
 
-def evaluate(criterion: nn.CrossEntropyLoss, model, dataloader):
+def evaluate(criterion: nn.CrossEntropyLoss, model: MLMHead, dataloader: torch.utils.data.DataLoader) -> float:
     model.eval()
     total_loss = 0.0
     for batch in dataloader:
@@ -50,13 +51,13 @@ def evaluate(criterion: nn.CrossEntropyLoss, model, dataloader):
 
 
 
-def main():
+def main(save_path: str) -> None:
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
 
 
     model_config = ModelConfig(vocab_size=tokenizer.vocab_size, max_seq_len=512, d_model=768, n_head=12, d_ffn=3072, n_layers=6, dropout=0.1)
 
-    train_config = PretrainConfig(save_path="models/v1/pretrain", tokenized_ds_dir=f"data/openwebtext_v1_seq{model_config.max_seq_len}", lr=3e-4, batch_size=64, gradient_accumulation_steps=32, num_epochs=3, lr_warmup=0.05)
+    train_config = PretrainConfig(tokenized_ds_dir=f"data/openwebtext_v1_seq{model_config.max_seq_len}", lr=3e-4, batch_size=64, gradient_accumulation_steps=32, num_epochs=3, lr_warmup=0.05, weight_decay=0.01)
 
     accelerator = Accelerator(mixed_precision="bf16", gradient_accumulation_steps=train_config.gradient_accumulation_steps)
 
@@ -86,7 +87,7 @@ def main():
 
     total_steps = (len(train_dataloader) * train_config.num_epochs) // train_config.gradient_accumulation_steps
 
-    optimizer = torch.optim.AdamW(model.parameters(), fused=True, lr=train_config.lr, weight_decay=0.01)
+    optimizer = torch.optim.AdamW(model.parameters(), fused=True, lr=train_config.lr, weight_decay=train_config.weight_decay)
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_warmup_steps=int(total_steps * train_config.lr_warmup),
@@ -101,8 +102,9 @@ def main():
 
 
     # TRAIN LOOP
-    model.train()
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
+    model.train()
+
     for epoch in range(train_config.num_epochs):
         for step, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
             with accelerator.accumulate(model):
@@ -115,45 +117,26 @@ def main():
                 optimizer.zero_grad()
 
             if step % 1000 == 0:
-                accelerator.print(f"Epoch {epoch} | Step {step} | TRAIN  Loss: {loss.item():.4f}")
+                accelerator.print(f"Epoch {epoch + 1} | Step {step} | TRAIN  Loss: {loss.item():.4f}")
 
             if step % 10000 == 0 and step > 0:
                 eval_loss = evaluate(criterion, model, eval_dataloader)
                 accelerator.print(f"TRAIN Loss: {loss.item():.4f} | Eval Loss: {eval_loss:.4f}")
 
-                step_path = f"{train_config.save_path}/checkpoints/step_{step}"
+                step_path = f"{save_path}/checkpoints/epoch_{epoch + 1}/step_{step}"
 
-                accelerator.wait_for_everyone()
-                accelerator.save_state(step_path, safe_serialization=True)
-
-                # SAVE ONLY ENCODER
-                unwrapped_model = accelerator.unwrap_model(model)
-                torch.save(unwrapped_model.encoder.state_dict(), f"{step_path}/encoder_only.pth")
-
-                with open(f"{step_path}/model_state.json", "w") as f:
-                    json.dump({"train_loss": loss.item(), "eval_loss": eval_loss}, f)
-                with open(f"{step_path}/model_config.json", "w") as f:
-                    f.write(model_config.model_dump_json())
-                with open(f"{step_path}/train_config.json", "w") as f:
-                    f.write(train_config.model_dump_json())
+                save_encoder(accelerator, model, step_path, model_config, train_config, loss.item(), eval_loss)
 
         eval_loss = evaluate(criterion, model, eval_dataloader)
-        accelerator.print(f"FINISH EPOCH {epoch} | TRAIN Loss: {loss.item():.4f} | Eval Loss: {eval_loss:.4f}")
+        accelerator.print(f"FINISH EPOCH {epoch + 1} | TRAIN Loss: {loss.item():.4f} | Eval Loss: {eval_loss:.4f}")
 
 
-    accelerator.wait_for_everyone()
-    accelerator.save_state(train_config.save_path, safe_serialization=True)
-
-    # SAVE ONLY ENCODER
-    unwrapped_model = accelerator.unwrap_model(model)
-    torch.save(unwrapped_model.encoder.state_dict(), f"{train_config.save_path}/encoder_only.pth")
-
-    with open(f"{train_config.save_path}/model_config.json", "w") as f:
-        f.write(model_config.model_dump_json())
-    with open(f"{train_config.save_path}/train_config.json", "w") as f:
-        f.write(train_config.model_dump_json())
+    save_encoder(accelerator, model, save_path, model_config, train_config)
 
 
 
 if __name__ == '__main__':
-    main()
+    SAVE_PATH = "models/v1/pretrain"
+    
+
+    main(SAVE_PATH)
