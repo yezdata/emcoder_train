@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import model_validator, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,6 +20,9 @@ class ModelConfig(BaseSettings):
 
 
 class ClassifierConfig(ModelConfig):
+    bayesian_train: bool
+    loss_weights: Literal["sqrt", "log"] | None
+
     num_labels: int
     id2label: dict[int, str]
     label2id: dict[str, int]

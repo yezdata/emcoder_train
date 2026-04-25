@@ -17,7 +17,7 @@ from src.v1.class_head import ClassificationHead
 from src.v1.emcoder_core import EmCoderCore
 
 
-def plot_uncertainty_ridge(epistemic_unc, label_names):
+def plot_uncertainty_ridge(epistemic_unc: np.ndarray, label_names: list, plots_save_dir: str) -> None:
     plt.figure(figsize=(12, 16)) 
     
     df = pd.DataFrame(epistemic_unc, columns=label_names)
@@ -28,13 +28,13 @@ def plot_uncertainty_ridge(epistemic_unc, label_names):
                 orient='h', cut=0, scale='width', inner='quartile')
     plt.title("Distribution of Epistemic Uncertainty per Emotion")
     plt.tight_layout()
-    plt.savefig("plots/epistemic_unc_violin.png")
+    plt.savefig(f"{plots_save_dir}/epistemic_unc_violin.png")
     plt.close()
 
 
 
-def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
-    os.makedirs("plots/each_label", exist_ok=True)
+def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int, plots_save_dir: str) -> None:
+    os.makedirs(f"{plots_save_dir}/each_label", exist_ok=True)
 
 
     plt.rcParams["figure.figsize"] = (14, 10)
@@ -59,9 +59,8 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
     )
 
     tokenized_test_ds = load_from_disk(f"{tokenized_ds_dir}/test")
-    tokenized_test_ds = tokenized_test_ds.select(range(50))
 
-    test_dataloader = torch.utils.data.DataLoader(tokenized_test_ds, batch_size=32, collate_fn=data_collator, shuffle=False, num_workers=8, pin_memory=True)
+    test_dataloader = torch.utils.data.DataLoader(tokenized_test_ds, batch_size=128, collate_fn=data_collator, shuffle=False, num_workers=8, pin_memory=True)
 
     model, test_dataloader = accelerator.prepare(model, test_dataloader)
 
@@ -124,7 +123,7 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
 
 
     # TODO find best threshold
-    preds = (mean_probs > 0.3).astype(int)
+    preds = (mean_probs > 0.5).astype(int)
 
     print(
         classification_report(
@@ -146,7 +145,7 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
     sns.heatmap(conf_matrix_pct, annot=False, cmap='GnBu', 
                 xticklabels=label_names, yticklabels=label_names)
     plt.title("Multi-label Confusion Matrix (% of times label j predicted when i is true)")
-    plt.savefig("plots/confusion_matrix.png")
+    plt.savefig(f"{plots_save_dir}/confusion_matrix.png")
     plt.close()
 
 
@@ -160,7 +159,7 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
     sns.scatterplot(x=epistemic_unc.flatten(), y=mean_probs.flatten(), alpha=0.5)
     plt.xlabel("Epistemic Uncertainty")
     plt.ylabel("Mean Predicted Probability")
-    plt.savefig("plots/epistemic_unc_scatter.png")
+    plt.savefig(f"{plots_save_dir}/epistemic_unc_scatter.png")
     plt.close()
 
 
@@ -169,12 +168,12 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
     sns.scatterplot(x=aleatoric_unc.flatten(), y=mean_probs.max(axis=-1), alpha=0.5)
     plt.xlabel("Aleatoric Uncertainty")
     plt.ylabel("Max Mean Predicted Probability")
-    plt.savefig("plots/aleatoric_unc_scatter.png")
+    plt.savefig(f"{plots_save_dir}/aleatoric_unc_scatter.png")
     plt.close()
 
 
 
-    plot_uncertainty_ridge(epistemic_unc, label_names)
+    plot_uncertainty_ridge(epistemic_unc, label_names, plots_save_dir)
 
 
 
@@ -190,7 +189,7 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
         plt.xlabel('Predicted')
         plt.ylabel('Actual')
         plt.title(f'Confusion Matrix for {label}')
-        plt.savefig(f"plots/each_label/confusion_matrix_{label}.png")
+        plt.savefig(f"{plots_save_dir}/each_label/confusion_matrix_{label}.png")
         plt.close()
 
 
@@ -199,6 +198,7 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int) -> None:
 if __name__ == "__main__":
     TOKENIZED_DS_DIR = "data/goemotions_v1_seq512"
     EMCODER_PATH = "models/v1/emcoder/epoch_5"
-    N_SAMPLES = 20
+    PLOTS_SAVE_DIR = "plots/v1"
+    N_SAMPLES = 50
 
-    main(TOKENIZED_DS_DIR, EMCODER_PATH, N_SAMPLES)
+    main(TOKENIZED_DS_DIR, EMCODER_PATH, N_SAMPLES, PLOTS_SAVE_DIR)

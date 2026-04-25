@@ -5,6 +5,7 @@ from accelerate import Accelerator
 from transformers import DataCollatorWithPadding, RobertaTokenizerFast, get_cosine_schedule_with_warmup
 from datasets import load_from_disk
 from tqdm import tqdm
+from typing import Literal
 from sklearn.metrics import f1_score, roc_auc_score
 
 from src.types_shapes import ClassLabels, ClassLogits
@@ -42,12 +43,11 @@ class WeightedBCEWithLogitsLoss(nn.Module):
 
 
 def compute_metrics(probs: np.ndarray, labels: np.ndarray) -> dict:
-    preds = (probs > 0.3).astype(int)
+    preds = (probs > 0.5).astype(int)
 
     return {
         "f1_macro": f1_score(labels, preds, average="macro", zero_division=0),
         "f1_micro": f1_score(labels, preds, average="micro", zero_division=0),
-        # TODO: if raises error -> add: multi_class="ovr"
         "roc_auc": roc_auc_score(labels, probs, average="macro")
     }
 
@@ -80,7 +80,7 @@ def evaluate_bayesian(criterion: WeightedBCEWithLogitsLoss, model: Classificatio
 
 
 
-def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> None:
+def main(save_path: str, encoder_path: str, bayesian_train: bool = False, loss_weights: Literal["sqrt", "log"] | None = None) -> None:
     encoder_lr = 1e-5 if bayesian_train else 2e-5
     head_lr = 5e-4 if bayesian_train else 1e-3
     # TODO if model give similar results for all samples, increase model_config.dropout to 0.15 / 0.2
@@ -97,11 +97,11 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> Non
     id2label = {i: label for i, label in enumerate(label_names)}
     label2id = {label: i for i, label in enumerate(label_names)}
 
-    model_config = ClassifierConfig(**encoder_config.model_dump(), base_encoder_path=encoder_path, num_labels=len(label_names), id2label=id2label, label2id=label2id)
+    model_config = ClassifierConfig(**encoder_config.model_dump(), bayesian_train=bayesian_train, loss_weights=loss_weights, base_encoder_path=encoder_path, num_labels=len(label_names), id2label=id2label, label2id=label2id)
     model_config.dropout = dropout_rate
 
 
-    train_config = FinetuneConfig(tokenized_ds_dir=f"data/goemotions_v1_seq{model_config.max_seq_len}", encoder_lr=encoder_lr, head_lr=head_lr, batch_size=16, gradient_accumulation_steps=16, num_epochs=10, lr_warmup=0.1, weight_decay=0.01)
+    train_config = FinetuneConfig(tokenized_ds_dir=f"data/goemotions_v1_seq{model_config.max_seq_len}", encoder_lr=encoder_lr, head_lr=head_lr, batch_size=32, gradient_accumulation_steps=8, num_epochs=10, lr_warmup=0.05, weight_decay=0.01)
 
 
     accelerator = Accelerator(mixed_precision="bf16", gradient_accumulation_steps=train_config.gradient_accumulation_steps)
@@ -162,9 +162,14 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> Non
     neg_counts = len(tokenized_train_ds) - pos_counts
 
     # NOTE: USE SQRT / LOG FOR NUM STABILITY
-    # - 1e-5 avoid division by zero
-    # raw_weights = np.sqrt((neg_counts + 1e-5) / (pos_counts + 1e-5))
-    raw_weights = 1 + np.log((neg_counts + 1e-5) / (pos_counts + 1e-5))
+    # - 1e-5 avoids division by zero
+    if model_config.loss_weights == "sqrt":
+        raw_weights = np.sqrt((neg_counts + 1e-5) / (pos_counts + 1e-5))
+    elif model_config.loss_weights == "log":
+        raw_weights = 1 + np.log((neg_counts + 1e-5) / (pos_counts + 1e-5))
+    else:
+        raw_weights = (neg_counts + 1e-5) / (pos_counts + 1e-5)
+
 
     # PREVENT EXTREME WEIGTHS
     raw_weights = np.clip(raw_weights, a_min=0.1, a_max=20.0)
@@ -225,7 +230,8 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False) -> Non
 if __name__ == "__main__":
     SAVE_PATH = "models/v1/emcoder"
     ENCODER_PATH = "models/v1/pretrain/checkpoints/epoch_2/step_40000"
-    BAYESIAN_TRAIN = False
+    BAYESIAN_TRAIN = True
+    LOSS_WEIGHTS = "log"
 
 
-    main(SAVE_PATH, ENCODER_PATH, BAYESIAN_TRAIN)
+    main(SAVE_PATH, ENCODER_PATH, BAYESIAN_TRAIN, LOSS_WEIGHTS)

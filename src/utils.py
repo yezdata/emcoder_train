@@ -33,18 +33,20 @@ def save_encoder(accelerator: Accelerator, model: nn.Module, save_path: str, mod
     torch.save(unwrapped_model.encoder.state_dict(), f"{save_path}/encoder_only.pth")
 
     with open(f"{save_path}/model_config.json", "w") as f:
-        f.write(model_config.model_dump_json())
+        f.write(model_config.model_dump_json(indent=4))
     with open(f"{save_path}/train_config.json", "w") as f:
-        f.write(train_config.model_dump_json())
+        f.write(train_config.model_dump_json(indent=4))
     
 
     if loss is not None and eval_loss is not None:
         with open(f"{save_path}/model_state.json", "w") as f:
-            json.dump({"train_loss": loss, "eval_loss": eval_loss}, f)
+            json.dump({"train_loss": loss, "eval_loss": eval_loss}, f, indent=4)
 
 
 def save_emcoder(accelerator: Accelerator, model: nn.Module, save_path: str, model_config: BaseSettings, train_config: BaseSettings, tokenizer: RobertaTokenizerFast, loss: float | None = None, eval_loss: float | None = None) -> None:
     os.makedirs(save_path, exist_ok=True)
+
+    accelerator.wait_for_everyone()
 
     # SAVE ONLY WHOLE MODEL
     unwrapped_model = accelerator.unwrap_model(model)
@@ -52,10 +54,10 @@ def save_emcoder(accelerator: Accelerator, model: nn.Module, save_path: str, mod
     tokenizer.save_pretrained(save_path)
 
     with open(f"{save_path}/model_config.json", "w") as f:
-        f.write(model_config.model_dump_json())
+        f.write(model_config.model_dump_json(indent=4))
     with open(f"{save_path}/train_config.json", "w") as f:
-        f.write(train_config.model_dump_json()) 
+        f.write(train_config.model_dump_json(indent=4)) 
     
     if loss is not None and eval_loss is not None:
         with open(f"{save_path}/model_state.json", "w") as f:
-            json.dump({"train_loss": loss, "eval_loss": eval_loss}, f)
+            json.dump({"train_loss": loss, "eval_loss": eval_loss}, f, indent=4)
