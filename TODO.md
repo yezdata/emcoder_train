@@ -1,3 +1,8 @@
+# zkusit různý threshold pro binarizaci predikcí 
+- vzhledem k epistemic unc - graf obráceně C
+- vzhledem k maximalizaci F1 score
+
+
 # README
 - porovnani se SOTA
 
