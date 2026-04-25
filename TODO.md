@@ -7,7 +7,9 @@
 - porovnani se SOTA
 
 
-# V2 - Vetsi pocet Transformer Layers
+# V2
+- Variable / větší max_seq_len
+- Vetsi pocet Transformer Layers
 - Transformer Layers tvořily 70–80 % celkových parametrů.
 
 
