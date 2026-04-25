@@ -103,7 +103,11 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int, plots_save_di
     # Calculate metrics
     label_names = [model_config.id2label[i] for i in range(model_config.num_labels)]
 
-
+    results_df = pd.DataFrame({
+        'max_epistemic': max_epistemic,
+        'aleatoric': aleatoric_unc
+    })
+    results_df.to_parquet(f"{plots_save_dir}/uncertainty_scores.parquet", index=False)
 
 
 
@@ -125,11 +129,15 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int, plots_save_di
     # TODO find best threshold
     preds = (mean_probs > 0.5).astype(int)
 
-    print(
-        classification_report(
-            all_labels, preds, target_names=label_names, zero_division=0
-        )
+
+    report_dict = classification_report(
+        all_labels, preds, target_names=label_names, zero_division=0, output_dict=True
     )
+    df = pd.DataFrame(report_dict).transpose().round(3)
+    df['support'] = df['support'].astype(int)
+    with open(f"{plots_save_dir}/classification_report.md", "w") as f:
+        f.write(df.to_markdown())
+    print(df)
 
     
 
@@ -197,7 +205,7 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int, plots_save_di
 
 if __name__ == "__main__":
     TOKENIZED_DS_DIR = "data/goemotions_v1_seq512"
-    EMCODER_PATH = "models/v1/emcoder/epoch_5"
+    EMCODER_PATH = "models/v1/emcoder/epoch_10"
     PLOTS_SAVE_DIR = "plots/v1"
     N_SAMPLES = 50
 

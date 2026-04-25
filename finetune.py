@@ -198,7 +198,7 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False, loss_w
                 if bayesian_train:
                     logits_samples = model.mc_forward(batch["input_ids"], batch["attention_mask"], n_samples=5)
 
-                    if step % 100 == 0:
+                    if step % 150 == 0:
                         accelerator.print(f"Step {step} | Avg Logits: {logits_samples.mean().item():.4f}")
 
                     loss = criterion.compute_bayesian_loss(logits_samples, batch["labels"])
