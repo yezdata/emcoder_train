@@ -112,11 +112,19 @@ linkStyle 5 stroke:#fbc02d,stroke-width:2px,fill:none
 linkStyle 11 stroke:#fbc02d,stroke-width:2px,fill:none
 ```
 
+
 ### Optimization
 The model is trained using a Weighted Bayesian Binary Cross Entropy loss:
-$$ \mathcal{L}_{Bayesian} = \frac{1}{T} \sum_{t=1}^{T} \text{BCEWithLogits}(z^{(t)}, y; w) $$
-where weights $w$ are calculated using a logarithmic class-balancing scale to handle extreme label imbalance.
-$$ w_c = 1 + \log\left(\frac{N_{neg, c} + \epsilon}{N_{pos, c} + \epsilon}\right)$$
+
+$$
+\mathcal{L}_{Bayesian} = \frac{1}{T} \sum_{t=1}^{T} \text{BCEWithLogits}(z^{(t)}, y; w)
+$$
+
+Where weights $w$ are calculated using a logarithmic class-balancing scale to handle extreme label imbalance:
+
+$$
+w_c = 1 + \log\left(\frac{N_{neg, c} + \epsilon}{N_{pos, c} + \epsilon}\right)
+$$
 
 
 
@@ -158,12 +166,13 @@ $$ w_c = 1 + \log\left(\frac{N_{neg, c} + \epsilon}{N_{pos, c} + \epsilon}\right
 | samples avg    |       0.525 |    0.616 |      0.544 |      6329 |
 
 
-**Model uncertainty estimation**
-[epistemic_unc](outputs/v1/epistemic_unc_scatter.png)
 
+**Model uncertainty estimation**
+![epistemic_unc](outputs/v1/epistemic_unc_scatter.png)
 
 **Confusion matrix**
-[multi-label-confusion-matrix](outputs/v1/confusion_matrix.png)
+![multi_label_confusion_matrix](outputs/v1/confusion_matrix.png)
+
 
 
 ## Workflow
