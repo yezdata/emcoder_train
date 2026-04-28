@@ -123,7 +123,7 @@ $$
 Where weights $w$ are calculated using a logarithmic class-balancing scale to handle extreme label imbalance:
 
 $$
-w_c = 1 + \log\left(\frac{N_{neg, c} + \epsilon}{N_{pos, c} + \epsilon}\right)
+w_{c} = \max\left( 0.1, \min\left( 20, 1 + \ln \left( \frac{N_{neg,c} + \epsilon}{N_{pos,c} + \epsilon} \right) \right) \right)
 $$
 
 
