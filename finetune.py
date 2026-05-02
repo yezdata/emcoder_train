@@ -97,11 +97,11 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False, loss_w
     id2label = {i: label for i, label in enumerate(label_names)}
     label2id = {label: i for i, label in enumerate(label_names)}
 
-    model_config = ClassifierConfig(**encoder_config.model_dump(), bayesian_train=bayesian_train, loss_weights=loss_weights, base_encoder_path=encoder_path, num_labels=len(label_names), id2label=id2label, label2id=label2id)
+    model_config = ClassifierConfig(**encoder_config.model_dump(), base_encoder_path=encoder_path, num_labels=len(label_names), id2label=id2label, label2id=label2id)
     model_config.dropout = dropout_rate
 
 
-    train_config = FinetuneConfig(tokenized_ds_dir=f"data/goemotions_v1_seq{model_config.max_seq_len}", encoder_lr=encoder_lr, head_lr=head_lr, batch_size=32, gradient_accumulation_steps=8, num_epochs=10, lr_warmup=0.05, weight_decay=0.01)
+    train_config = FinetuneConfig(bayesian_train=bayesian_train, loss_weights=loss_weights, tokenized_ds_dir=f"data/goemotions_v1_seq{model_config.max_seq_len}", encoder_lr=encoder_lr, head_lr=head_lr, batch_size=32, gradient_accumulation_steps=8, num_epochs=10, lr_warmup=0.05, weight_decay=0.01)
 
 
     accelerator = Accelerator(mixed_precision="bf16", gradient_accumulation_steps=train_config.gradient_accumulation_steps)
@@ -163,9 +163,9 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False, loss_w
 
     # NOTE: USE SQRT / LOG FOR NUM STABILITY
     # - 1e-5 avoids division by zero
-    if model_config.loss_weights == "sqrt":
+    if train_config.loss_weights == "sqrt":
         raw_weights = np.sqrt((neg_counts + 1e-5) / (pos_counts + 1e-5))
-    elif model_config.loss_weights == "log":
+    elif train_config.loss_weights == "log":
         raw_weights = 1 + np.log((neg_counts + 1e-5) / (pos_counts + 1e-5))
     else:
         raw_weights = (neg_counts + 1e-5) / (pos_counts + 1e-5)
@@ -195,7 +195,7 @@ def main(save_path: str, encoder_path: str, bayesian_train: bool = False, loss_w
                 print("Unfreezing encoder weights")
 
             with accelerator.accumulate(model):
-                if bayesian_train:
+                if train_config.bayesian_train:
                     logits_samples = model.mc_forward(batch["input_ids"], batch["attention_mask"], n_samples=5)
 
                     if step % 150 == 0:

@@ -20,15 +20,11 @@ class ModelConfig(BaseSettings):
 
 
 class ClassifierConfig(ModelConfig):
-    bayesian_train: bool
-    loss_weights: Literal["sqrt", "log"] | None
-
     num_labels: int
     id2label: dict[int, str]
     label2id: dict[str, int]
 
     base_encoder_path: str
-
 
     @field_validator("id2label", mode="before")
     @classmethod
@@ -62,6 +58,9 @@ class PretrainConfig(BaseSettings):
 
 
 class FinetuneConfig(BaseSettings):
+    bayesian_train: bool
+    loss_weights: Literal["sqrt", "log"] | None
+
     tokenized_ds_dir: str
 
     encoder_lr: float

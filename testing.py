@@ -159,11 +159,6 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int, output_dir: s
 
 
 
-    # TODO: try
-    # x = np.max(epistemic_unc, axis=-1)  # (N,) -> max epistemic uncertainty for each sample
-    # y = np.max(mean_probs, axis=-1)     # (N,) -> max predicted probability for each sample
-    # sns.scatterplot(x=x, y=y, alpha=0.5)
-
     sns.scatterplot(x=epistemic_unc.flatten(), y=mean_probs.flatten(), alpha=0.5)
     plt.xlabel("Epistemic Uncertainty")
     plt.ylabel("Mean Predicted Probability")
@@ -187,10 +182,6 @@ def main(tokenized_ds_dir: str, emcoder_path: str, n_samples: int, output_dir: s
 
 
 
-
-
-
-    # TODO: maybe remove
     mcm = multilabel_confusion_matrix(all_labels, preds)
     for i, label in enumerate(label_names):
         sns.heatmap(mcm[i], annot=True, fmt='d', cmap='Blues')
