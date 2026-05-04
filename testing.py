@@ -167,6 +167,7 @@ def main(
     prob_flat = mean_probs.flatten()
     unc_flat = epistemic_unc.flatten()
     labels_flat = all_labels.flatten()
+    # TODO find best threshold
     preds_flat = (prob_flat > 0.5).astype(int)
 
     is_correct = preds_flat == labels_flat
@@ -185,12 +186,14 @@ def main(
         y="Probability",
         hue="Correct",
         palette={True: "#2ecc71", False: "#e74c3c"},
-        alpha=0.4,
+        alpha=0.3,
         edgecolor=None,
     )
-    plt.xlabel("Epistemic Uncertainty")
+    plt.xlabel("Epistemic Uncertainty (Std Dev)")
     plt.ylabel("Mean Predicted Probability")
-    plt.legend(title="Prediction Correct", labels=["Incorrect", "Correct"])
+    leg = plt.legend(title="Prediction Correct")
+    for lh in leg.legend_handles:
+        lh.set_alpha(1.0)
     plt.savefig(f"{output_dir}/epistemic_unc_scatter.png")
     plt.close()
 
