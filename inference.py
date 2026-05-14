@@ -44,10 +44,10 @@ def main(
 
     test_dataloader = torch.utils.data.DataLoader(
         tokenized_test_ds,
-        batch_size=128,
+        batch_size=64,
         collate_fn=data_collator,
         shuffle=False,
-        num_workers=8,
+        num_workers=6,
         pin_memory=True,
     )
 
@@ -56,7 +56,7 @@ def main(
     # TEST LOOP - MC DROPOUT INFERENCE
     model.eval()
 
-    all_probs = []
+    all_logits = []
     all_labels = []
 
     with torch.inference_mode():
@@ -68,37 +68,20 @@ def main(
                 max_batch_size=max_batch_size,
             )
 
-            probs = torch.sigmoid(logits_samples)  # (n_samples, B, 28)
-
-            all_probs.append(probs.cpu().numpy())
+            all_logits.append(logits_samples.cpu().numpy())
             all_labels.append(batch["labels"].cpu().numpy())
 
+    all_logits = np.concatenate(all_logits, axis=1)  # (n_samples, N, num_labels)
     all_labels = np.concatenate(all_labels, axis=0)  # (N, num_labels)
-    all_probs = np.concatenate(all_probs, axis=1)  # (n_samples, N, num_labels)
-
-    mean_probs = all_probs.mean(axis=0)  # (N, num_labels)
-    epistemic_unc = all_probs.std(axis=0)  # (N, num_labels)
-
-    p = np.clip(mean_probs, 1e-8, 1 - 1e-8)
-    binary_entropy = -(p * np.log(p) + (1 - p) * np.log(1 - p))  # (N, num_labels)
-    aleatoric_unc = np.sum(binary_entropy, axis=-1)  # (N, )
 
     # export inference outputs
-    export_df = pd.DataFrame(
-        {
-            "mean_probs": list(mean_probs),
-            "epistemic_unc": list(epistemic_unc),
-            "aleatoric_unc": aleatoric_unc,
-            "labels": list(all_labels),
-        }
-    )
-    export_df.to_parquet(output_file)
+    np.savez_compressed(output_file, logits=all_logits, labels=all_labels)
 
 
 if __name__ == "__main__":
-    TOKENIZED_DS_DIR = "data/goemotions_v1_seq512/eval"
+    TOKENIZED_DS_DIR = "data/goemotions_v1_seq512/test"
     EMCODER_PATH = "models/v1/emcoder/epoch_10"
-    OUTPUT_FILE = "outputs/v1/val_outputs.parquet"
+    OUTPUT_FILE = "outputs/v1/test_outputs.npz"
     N_SAMPLES = 50
     MAX_BATCH_SIZE = 5
 

@@ -1,4 +1,5 @@
 from typing import Literal
+import os
 
 import numpy as np
 import torch
@@ -99,10 +100,11 @@ def main(
     bayesian_train: bool = False,
     loss_weights: Literal["sqrt", "log"] | None = None,
 ) -> None:
+    os.makedirs(save_path, exist_ok=True)
+
     encoder_lr = 1e-5 if bayesian_train else 2e-5
     head_lr = 5e-4 if bayesian_train else 1e-3
-    # TODO if model give similar results for all samples, increase model_config.dropout to 0.15 / 0.2
-    dropout_rate = 0.15 if bayesian_train else 0.1
+    dropout_rate = 0.15
 
     with open(f"{encoder_path}/config.json", "r") as f:
         encoder_config = ModelConfig.model_validate_json(f.read())
@@ -299,10 +301,10 @@ def main(
 
 
 if __name__ == "__main__":
-    SAVE_PATH = "models/v1/emcoder"
+    SAVE_PATH = "models/v1_5/emcoder"
     ENCODER_PATH = "models/v1/pretrain/checkpoints/epoch_2/step_40000"
-    BAYESIAN_TRAIN = True
-    N_SAMPLES = 20
+    BAYESIAN_TRAIN = False
+    N_SAMPLES = 50
     LOSS_WEIGHTS = "log"
 
     main(
