@@ -7,16 +7,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class ModelConfig(BaseSettings):
     vocab_size: int
     max_seq_len: int
-    
+
     d_model: int
     n_head: int
     n_layers: int
     d_ffn: int
-    
+
     dropout: float
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MODEL_")
-
 
 
 class ClassifierConfig(ModelConfig):
@@ -31,20 +30,18 @@ class ClassifierConfig(ModelConfig):
     def coerce_keys_to_int(cls, v):
         return {int(k): val for k, val in v.items()}
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def check_consistency(self):
         if len(self.id2label) != self.num_labels:
             raise ValueError("num_labels does not match id2label dictionary len")
         return self
 
 
-
-
 class PretrainConfig(BaseSettings):
     tokenized_ds_dir: str
 
     lr: float
-    lr_warmup: float 
+    lr_warmup: float
 
     weight_decay: float
 
@@ -52,20 +49,19 @@ class PretrainConfig(BaseSettings):
     gradient_accumulation_steps: int
     num_epochs: int
 
-
     model_config = SettingsConfigDict(env_file=".env", env_prefix="PRETRAIN_")
-
 
 
 class FinetuneConfig(BaseSettings):
     bayesian_train: bool
+    num_samples: int
     loss_weights: Literal["sqrt", "log"] | None
 
     tokenized_ds_dir: str
 
     encoder_lr: float
     head_lr: float
-    lr_warmup: float 
+    lr_warmup: float
 
     weight_decay: float
 

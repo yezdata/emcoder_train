@@ -11,8 +11,5 @@ wheels/
 
 .env
 
-TODO.md
-NOTES.md
-
 data/
 models/
