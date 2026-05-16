@@ -79,9 +79,9 @@ def main(
 
 
 if __name__ == "__main__":
-    TOKENIZED_DS_DIR = "data/goemotions_v1_seq512/test"
-    EMCODER_PATH = "models/v1/emcoder/epoch_10"
-    OUTPUT_FILE = "outputs/v1/test_outputs.npz"
+    TOKENIZED_DS_DIR = "data/goemotions_v1_seq512/eval"
+    EMCODER_PATH = "models/v1_5/emcoder/epoch_4"
+    OUTPUT_FILE = "outputs/v1_5/eval_outputs.npz"
     N_SAMPLES = 50
     MAX_BATCH_SIZE = 5
 

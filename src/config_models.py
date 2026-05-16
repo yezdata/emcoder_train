@@ -53,9 +53,7 @@ class PretrainConfig(BaseSettings):
 
 
 class FinetuneConfig(BaseSettings):
-    bayesian_train: bool
     num_samples: int
-    loss_weights: Literal["sqrt", "log"] | None
 
     tokenized_ds_dir: str
 

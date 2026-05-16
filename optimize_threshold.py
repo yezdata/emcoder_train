@@ -62,7 +62,7 @@ def main(input_file: str, model_path: str) -> None:
 
 
 if __name__ == "__main__":
-    INPUT_FILE = "outputs/v1/val_outputs.npz"
-    EMCODER_PATH = "models/v1/emcoder/epoch_10"
+    INPUT_FILE = "outputs/v1_5/eval_outputs.npz"
+    EMCODER_PATH = "models/v1_5/emcoder/epoch_4"
 
     main(INPUT_FILE, EMCODER_PATH)

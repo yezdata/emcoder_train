@@ -325,8 +325,8 @@ def main(
 
 
 if __name__ == "__main__":
-    INPUT_FILE = "outputs/v1/test_outputs.npz"
-    EMCODER_PATH = "models/v1/emcoder/epoch_10"
-    OUTPUT_PATH = "outputs/v1_optim_thresholds"
+    INPUT_FILE = "outputs/v1_5/test_outputs.npz"
+    EMCODER_PATH = "models/v1_5/emcoder/epoch_4"
+    OUTPUT_PATH = "outputs/v1_5_optim_thresholds"
 
     main(OUTPUT_PATH, INPUT_FILE, EMCODER_PATH)
