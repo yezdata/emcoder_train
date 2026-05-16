@@ -29,7 +29,8 @@ class ClassificationHead(nn.Module):
         )
 
     def _set_mc_dropout(self, active: bool = True):
-        for m in self.modules():
+        # for m in self.modules():
+        for m in self.classifier.modules():
             if isinstance(m, nn.Dropout):
                 m.train(active)
 
@@ -72,14 +73,17 @@ class ClassificationHead(nn.Module):
 
         all_logits = torch.empty((n_samples, B, num_labels), device=x.device)
 
+        features = self.encoder(x, mask)  # (B, S, D)
+
         for i in range(0, n_samples, max_batch_size):
             batch_samples = min(max_batch_size, n_samples - i)
 
-            x_stacked = x.repeat(batch_samples, 1)  # (batch_samples * B, S)
+            features_stacked = features.repeat(
+                batch_samples, 1, 1
+            )  # (n_samples * B, S, D)
             mask_stacked = mask.repeat(batch_samples, 1)
 
-            features = self.encoder(x_stacked, mask_stacked)
-            pooled = self._masked_mean_pooling(features, mask_stacked)
+            pooled = self._masked_mean_pooling(features_stacked, mask_stacked)
             logits = self.classifier(pooled)  # (n_samples * B, num_labels)
 
             all_logits[i : i + batch_samples] = logits.view(batch_samples, B, -1)

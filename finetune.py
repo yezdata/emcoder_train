@@ -1,4 +1,5 @@
 import os
+
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 from typing import Literal
@@ -22,7 +23,6 @@ from src.v1.class_head import ClassificationHead
 from src.v1.emcoder_core import EmCoderCore
 
 
-
 def compute_metrics(probs: np.ndarray, labels: np.ndarray) -> dict:
     preds = (probs > 0.5).astype(int)
 
@@ -39,7 +39,7 @@ def evaluate_bayesian(
     dataloader: torch.utils.data.DataLoader,
     accelerator: Accelerator,
     num_samples: int,
-    max_batch_size: int
+    max_batch_size: int,
 ) -> float:
     model.eval()
     total_loss = 0.0
@@ -49,7 +49,10 @@ def evaluate_bayesian(
     with torch.no_grad():
         for batch in tqdm(dataloader, total=len(dataloader), desc="Evaluating"):
             logits_samples = model.mc_forward(
-                batch["input_ids"], batch["attention_mask"], n_samples=num_samples, max_batch_size=max_batch_size
+                batch["input_ids"],
+                batch["attention_mask"],
+                n_samples=num_samples,
+                max_batch_size=max_batch_size,
             )
 
             loss = criterion.compute_bayesian_loss(logits_samples, batch["labels"])
@@ -111,13 +114,12 @@ def main(
         head_lr=head_lr,
         batch_size=8,
         gradient_accumulation_steps=16,
-        num_epochs=5,
+        num_epochs=10,
         lr_warmup=0.05,
         weight_decay=0.01,
     )
 
     accelerator = Accelerator(
-        mixed_precision="bf16",
         gradient_accumulation_steps=train_config.gradient_accumulation_steps,
     )
 
@@ -185,10 +187,23 @@ def main(
         )
     )
 
+    # computing the weights of labels
+    pos_counts = np.sum(np.array(tokenized_train_ds["labels"]), axis=0)
+    neg_counts = len(tokenized_train_ds) - pos_counts
+
+    # NOTE: USE LOG FOR NUM STABILITY
+    # - 1e-5 avoids division by zero
+    raw_weights = 1 + np.log((neg_counts + 1e-5) / (pos_counts + 1e-5))
+
+    # PREVENT EXTREME WEIGTHS
+    raw_weights = np.clip(raw_weights, a_min=0.1, a_max=20.0)
+    weights = torch.tensor(raw_weights, dtype=torch.float32)
+
+    print("Label Weights:", weights)
 
     # TRAIN LOOP
-    criterion = AsymmetricLoss(
-        gamma_neg=4.0, gamma_pos=0.0
+    criterion = WeightedBCEWithLogitsLoss(
+        device=accelerator.device, pos_weights=weights
     )
     model.train()
 
@@ -225,7 +240,12 @@ def main(
 
         avg_loss = epoch_loss / num_batches
         eval_loss = evaluate_bayesian(
-            criterion, model, eval_dataloader, accelerator, num_samples=train_config.num_samples, max_batch_size=max_batch_size
+            criterion,
+            model,
+            eval_dataloader,
+            accelerator,
+            num_samples=train_config.num_samples,
+            max_batch_size=max_batch_size,
         )
         accelerator.print(
             f"FINISH EPOCH {epoch + 1} | TRAIN Loss: {avg_loss:.4f} | Eval Loss: {eval_loss:.4f}"
@@ -249,8 +269,8 @@ def main(
 if __name__ == "__main__":
     SAVE_PATH = "models/v1_5/emcoder"
     ENCODER_PATH = "models/v1/pretrain/checkpoints/epoch_2/step_40000"
-    N_SAMPLES = 15
-    MAX_BATCH_SIZE = 5
+    N_SAMPLES = 30
+    MAX_BATCH_SIZE = 30
 
     main(
         save_path=SAVE_PATH,
