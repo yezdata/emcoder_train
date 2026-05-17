@@ -75,13 +75,14 @@ def load_inference_outputs(input_file: str) -> tuple:
 
 
     # ENTROPY-BASED UNCERTAINTY DECOMPOSITION
+    eps = 1e-12
     # Predictive Entropy
     total_unc = -(
-        mean_probs * np.log(mean_probs) + (1 - mean_probs) * np.log(1 - mean_probs)
+        mean_probs * np.log(mean_probs + eps) + (1 - mean_probs) * np.log(1 - mean_probs + eps)
     )
 
     # Expected Entropy
-    sample_entropies = -(probs * np.log(probs) + (1 - probs) * np.log(1 - probs))
+    sample_entropies = -(probs * np.log(probs + eps) + (1 - probs) * np.log(1 - probs + eps))
     aleatoric_unc = sample_entropies.mean(axis=0)
 
     # Mutual Information
@@ -177,7 +178,7 @@ def plot_f1_rejection_curve(
 
     ax.set_xlabel("Rejection Fraction")
     ax.set_ylabel("F1 Score")
-    ax.set_title("Prediction-Conditional F1-Rejection Curve")
+    ax.set_title("F1-Rejection Curve")
     ax.legend(loc="upper left")
     plt.tight_layout()
     plt.savefig(output_file)
@@ -186,23 +187,23 @@ def plot_f1_rejection_curve(
 
 
 def plot_uncertainty_ridge(
-    uncertainty: np.ndarray, label_names: list, output_file: str
+    uncertainty: np.ndarray, label_names: list, output_file: str, unc_type: str
 ) -> None:
     plt.figure(figsize=(12, 16))
 
     df = pd.DataFrame(uncertainty, columns=label_names)
-    df_melted = df.melt(var_name="Emotion", value_name="Uncertainty")
+    df_melted = df.melt(var_name="Emotion", value_name=f"{unc_type} Uncertainty")
 
     sns.violinplot(
         data=df_melted,
-        x="Uncertainty",
+        x=f"{unc_type} Uncertainty",
         y="Emotion",
         orient="h",
         cut=0,
         density_norm="width",
         inner="quartile",
     )
-    plt.title("Distribution of Uncertainty per Emotion")
+    plt.title(f"Distribution of {unc_type} Uncertainty per Emotion")
     plt.tight_layout()
     plt.savefig(output_file)
     plt.close()
@@ -327,8 +328,8 @@ def main(
         config.output_path,
     )
 
-    plot_uncertainty_ridge(aleatoric_unc, label_names, f"{config.output_path}/ridge_aleatoric.png")
-    plot_uncertainty_ridge(epistemic_unc, label_names, f"{config.output_path}/ridge_epistemic.png")
+    plot_uncertainty_ridge(aleatoric_unc, label_names, f"{config.output_path}/ridge_aleatoric.png", unc_type="Aleatoric")
+    plot_uncertainty_ridge(epistemic_unc, label_names, f"{config.output_path}/ridge_epistemic.png", unc_type="Epistemic")
 
     plot_f1_rejection_curve(preds, epistemic_unc, all_labels, label_names, f"{config.output_path}/f1_rejection_epistemic.png")
     plot_f1_rejection_curve(preds, aleatoric_unc, all_labels, label_names, f"{config.output_path}/f1_rejection_aleatoric.png")

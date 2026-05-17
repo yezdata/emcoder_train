@@ -17,11 +17,12 @@ def main(
 ) -> None:
     inference_config = InferenceConfig() # type:ignore
 
-    max_batch_size = inference_config.n_samples
+    # max_batch_size = inference_config.n_samples
+    max_batch_size = 5
 
     os.makedirs(os.path.dirname(inference_config.output_file), exist_ok=True)
 
-    accelerator = Accelerator(mixed_precision="bf16")
+    accelerator = Accelerator()
 
     with open(f"{inference_config.emcoder_path}/config.json", "r") as f:
         model_config = ClassifierConfig.model_validate_json(f.read())
@@ -57,7 +58,7 @@ def main(
     all_logits = []
     all_labels = []
 
-    with torch.inference_mode():
+    with torch.no_grad():
         for batch in tqdm(test_dataloader):
             logits_samples = model.mc_forward(
                 batch["input_ids"],

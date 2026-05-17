@@ -100,7 +100,6 @@ def main(
     )
     dropout_rate = os.getenv("CLASSIFIER_DROPOUT", None)
     model_config.dropout = float(dropout_rate)
-    print(f"USING DROPOUT: {model_config.dropout}")
 
     accelerator = Accelerator(
         gradient_accumulation_steps=train_config.gradient_accumulation_steps,

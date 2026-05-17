@@ -30,7 +30,7 @@ class ClassificationHead(nn.Module):
 
     def _set_mc_dropout(self, active: bool = True):
         for m in self.modules():
-            if isinstance(m, nn.Dropout):
+            if isinstance(m, nn.Dropout) or isinstance(m, nn.MultiheadAttention):
                 m.train(active)
 
     @staticmethod
@@ -60,8 +60,6 @@ class ClassificationHead(nn.Module):
         Returns:
             Logits of shape (n_samples, B, num_labels).
         """
-        self._set_mc_dropout(active=True)
-
         if max_batch_size is None:
             max_batch_size = n_samples
 
@@ -70,20 +68,25 @@ class ClassificationHead(nn.Module):
 
         all_logits = torch.empty((n_samples, B, num_labels), device=x.device)
 
-        for i in range(0, n_samples, max_batch_size):
-            batch_samples = min(max_batch_size, n_samples - i)
+        is_training = self.training
+        self._set_mc_dropout(active=True)
+        try:
+            for i in range(0, n_samples, max_batch_size):
+                batch_samples = min(max_batch_size, n_samples - i)
 
-            x_stacked = x.repeat(batch_samples, 1)  # (batch_samples * B, S)
-            mask_stacked = mask.repeat(batch_samples, 1)  # (batch_samples * B, S)
+                x_stacked = x.repeat(batch_samples, 1)  # (batch_samples * B, S)
+                mask_stacked = mask.repeat(batch_samples, 1)  # (batch_samples * B, S)
 
-            features = self.encoder(
-                x_stacked, mask_stacked
-            )  # (batch_samples * B, S, D)
+                features = self.encoder(
+                    x_stacked, mask_stacked
+                )  # (batch_samples * B, S, D)
 
-            pooled = self._masked_mean_pooling(features, mask_stacked)
-            logits = self.classifier(pooled)  # (n_samples * B, num_labels)
+                pooled = self._masked_mean_pooling(features, mask_stacked)
+                logits = self.classifier(pooled)  # (n_samples * B, num_labels)
 
-            all_logits[i : i + batch_samples] = logits.view(batch_samples, B, -1)
+                all_logits[i : i + batch_samples] = logits.view(batch_samples, B, -1)
+        finally:
+            self._set_mc_dropout(active=is_training)
 
         return all_logits
 
