@@ -37,21 +37,20 @@ def evaluate_bayesian(
     criterion: AsymmetricLoss | WeightedBCEWithLogitsLoss,
     model: ClassificationHead,
     dataloader: torch.utils.data.DataLoader,
-    accelerator: Accelerator,
-    num_samples: int,
+    n_samples: int,
     max_batch_size: int,
 ) -> float:
     model.eval()
+
     total_loss = 0.0
     all_pred_probs = []
     all_labels = []
-
     with torch.no_grad():
         for batch in tqdm(dataloader, total=len(dataloader), desc="Evaluating"):
             logits_samples = model.mc_forward(
                 batch["input_ids"],
                 batch["attention_mask"],
-                n_samples=num_samples,
+                n_samples=n_samples,
                 max_batch_size=max_batch_size,
             )
 
@@ -69,25 +68,17 @@ def evaluate_bayesian(
 
     print(compute_metrics(y_probs, y_true))
 
-    del all_pred_probs, all_labels, y_probs, y_true
-    if accelerator.device.type == "cuda":
-        torch.cuda.empty_cache()
-
-    model.train()
     return total_loss / len(dataloader)
 
 
 def main(
     save_path: str,
     encoder_path: str,
-    num_samples: int,
-    max_batch_size: int,
 ) -> None:
     os.makedirs(save_path, exist_ok=True)
 
-    encoder_lr = 2e-5
-    head_lr = 1e-3
-    dropout_rate = 0.15
+    train_config = FinetuneConfig() # type:ignore
+    max_batch_size = train_config.n_samples
 
     with open(f"{encoder_path}/config.json", "r") as f:
         encoder_config = ModelConfig.model_validate_json(f.read())
@@ -105,19 +96,7 @@ def main(
         id2label=id2label,
         label2id=label2id,
     )
-    model_config.dropout = dropout_rate
 
-    train_config = FinetuneConfig(
-        num_samples=num_samples,
-        tokenized_ds_dir=f"data/goemotions_v1_seq{model_config.max_seq_len}",
-        encoder_lr=encoder_lr,
-        head_lr=head_lr,
-        batch_size=8,
-        gradient_accumulation_steps=16,
-        num_epochs=10,
-        lr_warmup=0.05,
-        weight_decay=0.01,
-    )
 
     accelerator = Accelerator(
         gradient_accumulation_steps=train_config.gradient_accumulation_steps,
@@ -205,7 +184,6 @@ def main(
     criterion = WeightedBCEWithLogitsLoss(
         device=accelerator.device, pos_weights=weights
     )
-    model.train()
 
     # freeze encoder for first 500 steps
     # accelerator.unwrap_model(model).encoder.requires_grad_(False)
@@ -214,6 +192,7 @@ def main(
         epoch_loss = 0.0
         num_batches = 0
 
+        model.train()
         for step, batch in tqdm(
             enumerate(train_dataloader), total=len(train_dataloader)
         ):
@@ -235,16 +214,16 @@ def main(
 
             if step % 150 == 0:
                 accelerator.print(
-                    f"Epoch {epoch + 1} | Step {step} | TRAIN  Loss: {loss.item():.4f}"
+                    f"Epoch {epoch + 1} | Step {step} | TRAIN  Loss: {epoch_loss/num_batches:.4f}"
                 )
 
         avg_loss = epoch_loss / num_batches
+
         eval_loss = evaluate_bayesian(
             criterion,
             model,
             eval_dataloader,
-            accelerator,
-            num_samples=train_config.num_samples,
+            n_samples=train_config.n_samples,
             max_batch_size=max_batch_size,
         )
         accelerator.print(
@@ -262,19 +241,13 @@ def main(
             eval_loss=eval_loss,
         )
 
-        if accelerator.device.type == "cuda":
-            torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
     SAVE_PATH = "models/v1_5/emcoder"
-    ENCODER_PATH = "models/v1/pretrain/checkpoints/epoch_2/step_40000"
-    N_SAMPLES = 30
-    MAX_BATCH_SIZE = 30
+    ENCODER_PATH = "models/v1/pretrain/checkpoints/epoch_1/step_120000"
 
     main(
         save_path=SAVE_PATH,
         encoder_path=ENCODER_PATH,
-        num_samples=N_SAMPLES,
-        max_batch_size=MAX_BATCH_SIZE,
     )

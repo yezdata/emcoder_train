@@ -1,37 +1,35 @@
 import os
 
 import numpy as np
-import pandas as pd
 import torch
 from accelerate import Accelerator
 from datasets import load_from_disk
 from safetensors.torch import load_file
 from tqdm import tqdm
-from transformers import DataCollatorWithPadding, RobertaTokenizerFast
+from transformers import DataCollatorWithPadding, RobertaTokenizerFast # type:ignore
 
-from src.config_models import ClassifierConfig
+from src.config_models import ClassifierConfig, InferenceConfig
 from src.v1.class_head import ClassificationHead
 from src.v1.emcoder_core import EmCoderCore
 
 
 def main(
-    tokenized_ds_dir: str,
-    emcoder_path: str,
-    num_samples: int,
-    max_batch_size: int | None,
-    output_file: str,
 ) -> None:
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    inference_config = InferenceConfig() # type:ignore
+
+    max_batch_size = inference_config.n_samples
+
+    os.makedirs(os.path.dirname(inference_config.output_file), exist_ok=True)
 
     accelerator = Accelerator(mixed_precision="bf16")
 
-    with open(f"{emcoder_path}/config.json", "r") as f:
+    with open(f"{inference_config.emcoder_path}/config.json", "r") as f:
         model_config = ClassifierConfig.model_validate_json(f.read())
 
     encoder = EmCoderCore(model_config)
     model = ClassificationHead(encoder, model_config)
 
-    state_dict = load_file(f"{emcoder_path}/model.safetensors")
+    state_dict = load_file(f"{inference_config.emcoder_path}/model.safetensors")
     model.load_state_dict(state_dict, strict=True)
 
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
@@ -40,11 +38,11 @@ def main(
         tokenizer=tokenizer,
     )
 
-    tokenized_test_ds = load_from_disk(tokenized_ds_dir)
+    tokenized_test_ds = load_from_disk(inference_config.tokenized_ds_dir)
 
     test_dataloader = torch.utils.data.DataLoader(
-        tokenized_test_ds,
-        batch_size=64,
+        tokenized_test_ds, # type:ignore
+        batch_size=inference_config.batch_size,
         collate_fn=data_collator,
         shuffle=False,
         num_workers=6,
@@ -64,7 +62,7 @@ def main(
             logits_samples = model.mc_forward(
                 batch["input_ids"],
                 batch["attention_mask"],
-                n_samples=num_samples,
+                n_samples=inference_config.n_samples,
                 max_batch_size=max_batch_size,
             )
 
@@ -75,14 +73,8 @@ def main(
     all_labels = np.concatenate(all_labels, axis=0)  # (N, num_labels)
 
     # export inference outputs
-    np.savez_compressed(output_file, logits=all_logits, labels=all_labels)
+    np.savez_compressed(inference_config.output_file, logits=all_logits, labels=all_labels)
 
 
 if __name__ == "__main__":
-    TOKENIZED_DS_DIR = "data/goemotions_v1_seq512/test"
-    EMCODER_PATH = "models/v1_5/emcoder/epoch_4"
-    OUTPUT_FILE = "outputs/v1_5/test_outputs.npz"
-    N_SAMPLES = 50
-    MAX_BATCH_SIZE = 5
-
-    main(TOKENIZED_DS_DIR, EMCODER_PATH, N_SAMPLES, MAX_BATCH_SIZE, OUTPUT_FILE)
+    main()

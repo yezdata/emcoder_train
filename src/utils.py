@@ -32,8 +32,8 @@ def save_encoder(
 ) -> None:
     os.makedirs(save_path, exist_ok=True)
 
-    accelerator.wait_for_everyone()
-    accelerator.save_state(save_path, safe_serialization=True)
+    resume_dir = os.path.join(save_path, "accelerator_state")
+    accelerator.save_state(resume_dir, safe_serialization=True)
 
     # SAVE ONLY ENCODER
     unwrapped_model = accelerator.unwrap_model(model)
@@ -60,8 +60,6 @@ def save_emcoder(
     eval_loss: float | None = None,
 ) -> None:
     os.makedirs(save_path, exist_ok=True)
-
-    accelerator.wait_for_everyone()
 
     # SAVE ONLY WHOLE MODEL
     unwrapped_model = accelerator.unwrap_model(model)

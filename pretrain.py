@@ -3,7 +3,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from accelerate import Accelerator
 from transformers import (
-    RobertaTokenizerFast,
+    RobertaTokenizerFast, # type: ignore
     DataCollatorForLanguageModeling,
     get_cosine_schedule_with_warmup,
 )
@@ -32,15 +32,15 @@ def evaluate(
     dataloader: torch.utils.data.DataLoader,
 ) -> float:
     model.eval()
+
     total_loss = 0.0
-    for batch in dataloader:
-        with torch.no_grad():
+    with torch.no_grad():
+        for batch in dataloader:
             outputs = model(batch["input_ids"], batch["attention_mask"])
             loss = compute_loss(criterion, outputs, batch["labels"])
 
-        total_loss += loss.item()
+            total_loss += loss.detach().item()
 
-    model.train()
     return total_loss / len(dataloader)
 
 
@@ -49,23 +49,9 @@ def main(save_path: str) -> None:
 
     model_config = ModelConfig(
         vocab_size=tokenizer.vocab_size,
-        max_seq_len=512,
-        d_model=768,
-        n_head=12,
-        d_ffn=3072,
-        n_layers=6,
-        dropout=0.1,
-    )
+    ) # type: ignore
 
-    train_config = PretrainConfig(
-        tokenized_ds_dir=f"data/openwebtext_v1_seq{model_config.max_seq_len}",
-        lr=3e-4,
-        batch_size=64,
-        gradient_accumulation_steps=32,
-        num_epochs=5,
-        lr_warmup=0.05,
-        weight_decay=0.01,
-    )
+    train_config = PretrainConfig() # type: ignore
 
     accelerator = Accelerator(
         gradient_accumulation_steps=train_config.gradient_accumulation_steps
@@ -84,7 +70,7 @@ def main(save_path: str) -> None:
     tokenized_eval_ds = load_from_disk(f"{train_config.tokenized_ds_dir}/eval")
 
     train_dataloader = torch.utils.data.DataLoader(
-        tokenized_train_ds,
+        tokenized_train_ds, # type: ignore
         batch_size=train_config.batch_size,
         collate_fn=data_collator,
         shuffle=True,
@@ -92,7 +78,7 @@ def main(save_path: str) -> None:
         pin_memory=True,
     )
     eval_dataloader = torch.utils.data.DataLoader(
-        tokenized_eval_ds,
+        tokenized_eval_ds, # type: ignore
         batch_size=train_config.batch_size,
         collate_fn=data_collator,
         shuffle=False,
@@ -124,9 +110,12 @@ def main(save_path: str) -> None:
 
     # TRAIN LOOP
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
-    model.train()
 
     for epoch in range(train_config.num_epochs):
+        epoch_loss = 0.0
+        num_batches = 0
+
+        model.train()
         for step, batch in tqdm(
             enumerate(train_dataloader), total=len(train_dataloader)
         ):
@@ -138,6 +127,9 @@ def main(save_path: str) -> None:
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
+
+                epoch_loss += loss.detach().item()
+                num_batches += 1
 
             if step % 1000 == 0:
                 accelerator.print(
@@ -162,9 +154,13 @@ def main(save_path: str) -> None:
                     eval_loss,
                 )
 
+                model.train()
+
+        avg_loss = epoch_loss / num_batches
+
         eval_loss = evaluate(criterion, model, eval_dataloader)
         accelerator.print(
-            f"FINISH EPOCH {epoch + 1} | TRAIN Loss: {loss.item():.4f} | Eval Loss: {eval_loss:.4f}"
+            f"FINISH EPOCH {epoch + 1} | TRAIN Loss: {avg_loss:.4f} | Eval Loss: {eval_loss:.4f}"
         )
 
     save_encoder(accelerator, model, save_path, model_config, train_config)

@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic import model_validator, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,7 +13,7 @@ class ModelConfig(BaseSettings):
 
     dropout: float
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="MODEL_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="ENCODER_", extra="ignore")
 
 
 class ClassifierConfig(ModelConfig):
@@ -36,6 +34,8 @@ class ClassifierConfig(ModelConfig):
             raise ValueError("num_labels does not match id2label dictionary len")
         return self
 
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="CLASSIFIER_", extra="ignore")
+
 
 class PretrainConfig(BaseSettings):
     tokenized_ds_dir: str
@@ -49,11 +49,11 @@ class PretrainConfig(BaseSettings):
     gradient_accumulation_steps: int
     num_epochs: int
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="PRETRAIN_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="PRETRAIN_", extra="ignore")
 
 
 class FinetuneConfig(BaseSettings):
-    num_samples: int
+    n_samples: int
 
     tokenized_ds_dir: str
 
@@ -67,4 +67,35 @@ class FinetuneConfig(BaseSettings):
     gradient_accumulation_steps: int
     num_epochs: int
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="FINETUNE_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="FINETUNE_", extra="ignore")
+
+
+
+class InferenceConfig(BaseSettings):
+    tokenized_ds_dir: str
+    emcoder_path: str
+
+    batch_size: int
+
+    n_samples: int
+
+    output_file: str
+
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="INFERENCE_", extra="ignore")
+
+
+
+class ThresholdOptimizationConfig(BaseSettings):
+    input_file: str
+    model_path: str
+
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="THRESHOLD_OPTIMIZATION_", extra="ignore")
+
+
+class EvalConfig(BaseSettings):
+    model_path: str
+
+    input_file: str
+    output_path: str
+
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="EVAL_", extra="ignore")

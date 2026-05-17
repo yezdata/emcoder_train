@@ -1,5 +1,5 @@
 from datasets import load_dataset
-from transformers import RobertaTokenizerFast
+from transformers import RobertaTokenizerFast # type:ignore
 
 
 def main():

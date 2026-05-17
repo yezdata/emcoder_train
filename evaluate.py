@@ -8,7 +8,7 @@ from scipy.special import expit
 import seaborn as sns
 from sklearn.metrics import classification_report, multilabel_confusion_matrix, f1_score
 
-from src.config_models import ClassifierConfig
+from src.config_models import ClassifierConfig, EvalConfig
 
 
 def plot_per_label_scatters(
@@ -23,7 +23,6 @@ def plot_per_label_scatters(
     os.makedirs(f"{output_dir}/label_scatters", exist_ok=True)
 
     for i, label_name in enumerate(label_names):
-        # Příprava dat pro konkrétní label
         is_correct = preds[:, i] == all_labels[:, i]
 
         label_df = pd.DataFrame(
@@ -35,10 +34,8 @@ def plot_per_label_scatters(
             }
         )
 
-        # Vykreslení obou grafů vedle sebe pro srovnání
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
-        # Aleatoric Scatter
         sns.scatterplot(
             data=label_df,
             x="Aleatoric",
@@ -50,7 +47,6 @@ def plot_per_label_scatters(
         )
         axes[0].set_title(f"Aleatoric Uncertainty - {label_name}")
 
-        # Epistemic Scatter
         sns.scatterplot(
             data=label_df,
             x="Epistemic",
@@ -77,6 +73,8 @@ def load_inference_outputs(input_file: str) -> tuple:
 
     mean_probs = probs.mean(axis=0)  # (N, num_labels)
 
+
+    # ENTROPY-BASED UNCERTAINTY DECOMPOSITION
     # Predictive Entropy
     total_unc = -(
         mean_probs * np.log(mean_probs) + (1 - mean_probs) * np.log(1 - mean_probs)
@@ -90,7 +88,14 @@ def load_inference_outputs(input_file: str) -> tuple:
     epistemic_unc = total_unc - aleatoric_unc
     epistemic_unc = np.maximum(epistemic_unc, 0)
 
+
+    # # VARIANCE-BASED UNCERTAINTY DECOMPOSITION
+    # epistemic_unc = probs.var(axis=0)
+    # aleatoric_unc = (probs * (1 - probs)).mean(axis=0)
+    # total_unc = epistemic_unc + aleatoric_unc
+
     return mean_probs, total_unc, epistemic_unc, aleatoric_unc, labels
+
 
 
 def plot_f1_rejection_curve(
@@ -98,11 +103,11 @@ def plot_f1_rejection_curve(
     uncertainty: np.ndarray,
     all_labels: np.ndarray,
     label_names: list,
-    output_dir: str,
+    output_file: str,
 ) -> None:
     rejection_fractions = np.linspace(0.0, 0.5, 20)
 
-    plt.figure(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(12, 8))
 
     all_f1_scores = {label: [] for label in label_names}
     macro_f1_scores = []
@@ -115,23 +120,35 @@ def plot_f1_rejection_curve(
             unc_class = uncertainty[:, i]
             labels_class = all_labels[:, i]
 
-            sorted_indices = np.argsort(unc_class)
-            keep_count = int(len(unc_class) * (1.0 - frac))
+            pos_indices = np.where(preds == 1)[0]
+            neg_indices = np.where(preds == 0)[0]
 
-            if keep_count == 0:
+            if len(pos_indices) > 0:
+                sorted_pos = pos_indices[np.argsort(unc_class[pos_indices])]
+                keep_pos_count = int(len(pos_indices) * (1.0 - frac))
+                keep_pos = sorted_pos[:keep_pos_count]
+            else:
+                keep_pos = np.array([], dtype=int)
+
+            if len(neg_indices) > 0:
+                sorted_neg = neg_indices[np.argsort(unc_class[neg_indices])]
+                keep_neg_count = int(len(neg_indices) * (1.0 - frac))
+                keep_neg = sorted_neg[:keep_neg_count]
+            else:
+                keep_neg = np.array([], dtype=int)
+
+            keep_indices = np.concatenate([keep_pos, keep_neg])
+
+            if len(keep_indices) == 0:
                 all_f1_scores[label].append(np.nan)
                 continue
 
-            keep_indices = sorted_indices[:keep_count]
             filt_preds = preds[keep_indices]
             filt_labels = labels_class[keep_indices]
 
-            if filt_labels.sum() == 0:
-                all_f1_scores[label].append(np.nan)
-            else:
-                f1 = f1_score(filt_labels, filt_preds, zero_division=0)
-                all_f1_scores[label].append(f1)
-                current_step_f1.append(f1)
+            f1 = f1_score(filt_labels, filt_preds, zero_division=0)
+            all_f1_scores[label].append(f1)
+            current_step_f1.append(f1)
 
         if current_step_f1:
             macro_f1_scores.append(np.mean(current_step_f1))
@@ -141,7 +158,7 @@ def plot_f1_rejection_curve(
     for label in label_names:
         f1_series = np.array(all_f1_scores[label])
         valid_mask = ~np.isnan(f1_series)
-        plt.plot(
+        ax.plot(
             rejection_fractions[: len(f1_series)][valid_mask],
             f1_series[valid_mask],
             alpha=0.15,
@@ -150,7 +167,7 @@ def plot_f1_rejection_curve(
 
     macro_series = np.array(macro_f1_scores)
     valid_macro_mask = ~np.isnan(macro_series)
-    plt.plot(
+    ax.plot(
         rejection_fractions[: len(macro_series)][valid_macro_mask],
         macro_series[valid_macro_mask],
         color="red",
@@ -158,17 +175,18 @@ def plot_f1_rejection_curve(
         label="Macro F1",
     )
 
-    plt.xlabel("Rejection Fraction")
-    plt.ylabel("F1 Score")
-    plt.title("F1-Rejection Curve")
-    plt.legend(loc="upper left")
+    ax.set_xlabel("Rejection Fraction")
+    ax.set_ylabel("F1 Score")
+    ax.set_title("Prediction-Conditional F1-Rejection Curve")
+    ax.legend(loc="upper left")
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/f1_rejection_curve.png")
+    plt.savefig(output_file)
     plt.close()
 
 
+
 def plot_uncertainty_ridge(
-    uncertainty: np.ndarray, label_names: list, output_dir: str
+    uncertainty: np.ndarray, label_names: list, output_file: str
 ) -> None:
     plt.figure(figsize=(12, 16))
 
@@ -181,24 +199,23 @@ def plot_uncertainty_ridge(
         y="Emotion",
         orient="h",
         cut=0,
-        scale="width",
+        density_norm="width",
         inner="quartile",
     )
     plt.title("Distribution of Uncertainty per Emotion")
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/unc_violin.png")
+    plt.savefig(output_file)
     plt.close()
 
 
 def main(
-    output_dir: str,
-    input_file: str,
-    model_path: str,
 ) -> None:
-    os.makedirs(f"{output_dir}/each_label", exist_ok=True)
+    config = EvalConfig() # type:ignore
+
+    os.makedirs(f"{config.output_path}/each_label", exist_ok=True)
 
     # load optimized thresholds
-    with open(f"{model_path}/thresholds.json", "r") as f:
+    with open(f"{config.model_path}/thresholds.json", "r") as f:
         thresholds = json.load(f)
 
     plt.rcParams["figure.figsize"] = (14, 10)
@@ -206,10 +223,10 @@ def main(
 
     # load inference outputs
     mean_probs, total_unc, epistemic_unc, aleatoric_unc, all_labels = (
-        load_inference_outputs(input_file)
+        load_inference_outputs(config.input_file)
     )
 
-    with open(f"{model_path}/config.json", "r") as f:
+    with open(f"{config.model_path}/config.json", "r") as f:
         model_config = ClassifierConfig.model_validate_json(f.read())
 
     # Calculate metrics
@@ -228,7 +245,7 @@ def main(
     df_report["support"] = df_report["support"].astype(int)
     df_report.index.name = "label"
     df_report = df_report.reset_index()
-    df_report.to_csv(f"{output_dir}/classification_report.csv", index=False)
+    df_report.to_csv(f"{config.output_path}/classification_report.csv", index=False)
     print(df_report)
 
     conf_matrix = np.dot(all_labels.T, preds)
@@ -248,7 +265,7 @@ def main(
     plt.title(
         "Multi-label Confusion Matrix (% of times label j predicted when i is true)"
     )
-    plt.savefig(f"{output_dir}/confusion_matrix.png")
+    plt.savefig(f"{config.output_path}/confusion_matrix.png")
     plt.close()
 
     prob_flat = mean_probs.flatten()
@@ -279,8 +296,8 @@ def main(
     plt.ylabel("Mean Predicted Probability")
     leg = plt.legend(title="Prediction Correct")
     for lh in leg.legend_handles:
-        lh.set_alpha(1.0)
-    plt.savefig(f"{output_dir}/epistemic_unc_scatter.png")
+        lh.set_alpha(1.0) # type: ignore
+    plt.savefig(f"{config.output_path}/epistemic_unc_scatter.png")
     plt.close()
 
     sns.scatterplot(
@@ -296,8 +313,8 @@ def main(
     plt.ylabel("Mean Predicted Probability")
     leg = plt.legend(title="Prediction Correct")
     for lh in leg.legend_handles:
-        lh.set_alpha(1.0)
-    plt.savefig(f"{output_dir}/aleatoric_unc_scatter.png")
+        lh.set_alpha(1.0) # type: ignore
+    plt.savefig(f"{config.output_path}/aleatoric_unc_scatter.png")
     plt.close()
 
     plot_per_label_scatters(
@@ -307,12 +324,14 @@ def main(
         all_labels,
         preds,
         label_names,
-        output_dir,
+        config.output_path,
     )
 
-    plot_uncertainty_ridge(total_unc, label_names, output_dir)
+    plot_uncertainty_ridge(aleatoric_unc, label_names, f"{config.output_path}/ridge_aleatoric.png")
+    plot_uncertainty_ridge(epistemic_unc, label_names, f"{config.output_path}/ridge_epistemic.png")
 
-    plot_f1_rejection_curve(preds, total_unc, all_labels, label_names, output_dir)
+    plot_f1_rejection_curve(preds, epistemic_unc, all_labels, label_names, f"{config.output_path}/f1_rejection_epistemic.png")
+    plot_f1_rejection_curve(preds, aleatoric_unc, all_labels, label_names, f"{config.output_path}/f1_rejection_aleatoric.png")
 
     mcm = multilabel_confusion_matrix(all_labels, preds)
     for i, label in enumerate(label_names):
@@ -320,13 +339,9 @@ def main(
         plt.xlabel("Predicted")
         plt.ylabel("Actual")
         plt.title(f"Confusion Matrix for {label}")
-        plt.savefig(f"{output_dir}/each_label/confusion_matrix_{label}.png")
+        plt.savefig(f"{config.output_path}/each_label/confusion_matrix_{label}.png")
         plt.close()
 
 
 if __name__ == "__main__":
-    INPUT_FILE = "outputs/v1_5/test_outputs.npz"
-    EMCODER_PATH = "models/v1_5/emcoder/epoch_4"
-    OUTPUT_PATH = "outputs/v1_5_optim_thresholds"
-
-    main(OUTPUT_PATH, INPUT_FILE, EMCODER_PATH)
+    main()

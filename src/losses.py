@@ -57,7 +57,6 @@ class AsymmetricLoss(nn.Module):
         return loss_samples.mean(dim=0).mean()
 
 
-# weighted BCE with logits loss
 class WeightedBCEWithLogitsLoss(nn.Module):
     def __init__(self, device, pos_weights=None):
         super().__init__()

@@ -42,8 +42,6 @@ class ClassificationHead(nn.Module):
         count_tokens = torch.clamp(mask.sum(dim=1), min=1e-9)  # (B, 1)
         return sum_masked_features / count_tokens  # (B, D)
 
-    # TODO argument: neco jako grad accumulation -> aby se nemusela do VRAM cpat cela N_samples ale slo to napr po batch sekvencne
-    # TODO: pridat novou metodu do HF + pridat ten docstring do toho .py
     def mc_forward(
         self,
         x: BatchIDs,
