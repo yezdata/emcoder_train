@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from accelerate import Accelerator
 from datasets import load_from_disk
+from dotenv import load_dotenv
 from sklearn.metrics import f1_score, roc_auc_score
 from tqdm import tqdm
 from transformers import (
@@ -75,9 +76,10 @@ def main(
     save_path: str,
     encoder_path: str,
 ) -> None:
+    load_dotenv()
     os.makedirs(save_path, exist_ok=True)
 
-    train_config = FinetuneConfig() # type:ignore
+    train_config = FinetuneConfig()  # type:ignore
     max_batch_size = train_config.n_samples
 
     with open(f"{encoder_path}/config.json", "r") as f:
@@ -96,7 +98,9 @@ def main(
         id2label=id2label,
         label2id=label2id,
     )
-
+    dropout_rate = os.getenv("CLASSIFIER_DROPOUT", None)
+    model_config.dropout = float(dropout_rate)
+    print(f"USING DROPOUT: {model_config.dropout}")
 
     accelerator = Accelerator(
         gradient_accumulation_steps=train_config.gradient_accumulation_steps,
@@ -214,7 +218,7 @@ def main(
 
             if step % 150 == 0:
                 accelerator.print(
-                    f"Epoch {epoch + 1} | Step {step} | TRAIN  Loss: {epoch_loss/num_batches:.4f}"
+                    f"Epoch {epoch + 1} | Step {step} | TRAIN  Loss: {epoch_loss / num_batches:.4f}"
                 )
 
         avg_loss = epoch_loss / num_batches
@@ -240,7 +244,6 @@ def main(
             loss=avg_loss,
             eval_loss=eval_loss,
         )
-
 
 
 if __name__ == "__main__":
