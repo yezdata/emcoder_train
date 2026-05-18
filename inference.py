@@ -6,16 +6,14 @@ from accelerate import Accelerator
 from datasets import load_from_disk
 from safetensors.torch import load_file
 from tqdm import tqdm
-from transformers import DataCollatorWithPadding, RobertaTokenizerFast # type:ignore
+from transformers import DataCollatorWithPadding, RobertaTokenizerFast  # type:ignore
 
-from src.config_models import ClassifierConfig, InferenceConfig
-from src.v1.class_head import ClassificationHead
-from src.v1.emcoder_core import EmCoderCore
+from src.config_models import EmCoderConfig, InferenceConfig
+from src.v1.emcoder import EmCoder
 
 
-def main(
-) -> None:
-    inference_config = InferenceConfig() # type:ignore
+def main() -> None:
+    inference_config = InferenceConfig()  # type:ignore
 
     # max_batch_size = inference_config.n_samples
     max_batch_size = 5
@@ -25,10 +23,9 @@ def main(
     accelerator = Accelerator()
 
     with open(f"{inference_config.emcoder_path}/config.json", "r") as f:
-        model_config = ClassifierConfig.model_validate_json(f.read())
+        model_config = EmCoderConfig.model_validate_json(f.read())
 
-    encoder = EmCoderCore(model_config)
-    model = ClassificationHead(encoder, model_config)
+    model = EmCoder(model_config)
 
     state_dict = load_file(f"{inference_config.emcoder_path}/model.safetensors")
     model.load_state_dict(state_dict, strict=True)
@@ -42,7 +39,7 @@ def main(
     tokenized_test_ds = load_from_disk(inference_config.tokenized_ds_dir)
 
     test_dataloader = torch.utils.data.DataLoader(
-        tokenized_test_ds, # type:ignore
+        tokenized_test_ds,  # type:ignore
         batch_size=inference_config.batch_size,
         collate_fn=data_collator,
         shuffle=False,
@@ -74,7 +71,9 @@ def main(
     all_labels = np.concatenate(all_labels, axis=0)  # (N, num_labels)
 
     # export inference outputs
-    np.savez_compressed(inference_config.output_file, logits=all_logits, labels=all_labels)
+    np.savez_compressed(
+        inference_config.output_file, logits=all_logits, labels=all_labels
+    )
 
 
 if __name__ == "__main__":

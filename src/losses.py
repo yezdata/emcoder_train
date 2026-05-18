@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -58,19 +59,38 @@ class AsymmetricLoss(nn.Module):
 
 
 class WeightedBCEWithLogitsLoss(nn.Module):
-    def __init__(self, device, pos_weights=None):
+    def __init__(
+        self,
+        pos_counts: np.ndarray | None = None,
+        neg_counts: np.ndarray | None = None,
+    ):
         super().__init__()
-        self.pos_weights = pos_weights.to(device) if pos_weights is not None else None
 
-        self.loss_fct_none = torch.nn.BCEWithLogitsLoss(
-            pos_weight=self.pos_weights, reduction="none"
-        )
-        self.loss_fct_mean = torch.nn.BCEWithLogitsLoss(
-            pos_weight=self.pos_weights, reduction="mean"
-        )
+        weights = self._compute_pos_weights(pos_counts, neg_counts)
+
+        self.register_buffer("pos_weights", weights)
+
+    def _compute_pos_weights(
+        self, pos_counts: np.ndarray | None, neg_counts: np.ndarray | None
+    ) -> torch.Tensor | None:
+        if pos_counts is None or neg_counts is None:
+            return None
+
+        # USE LOG FOR NUM STABILITY
+        # - 1e-5 avoids division by zero
+        raw_weights = 1 + np.log((neg_counts + 1e-5) / (pos_counts + 1e-5))
+
+        # PREVENT EXTREME WEIGTHS
+        raw_weights = np.clip(raw_weights, a_min=0.1, a_max=20.0)
+        return torch.tensor(raw_weights, dtype=torch.float32)
 
     def forward(self, logits: ClassLogits, labels: ClassLabels) -> torch.Tensor:
-        return self.loss_fct_mean(logits, labels.to(logits.dtype))
+        return F.binary_cross_entropy_with_logits(
+            logits,
+            labels.to(logits.dtype),
+            pos_weight=self.pos_weights,
+            reduction="mean",
+        )
 
     def compute_bayesian_loss(
         self, logits_samples: torch.Tensor, labels: ClassLabels
@@ -81,10 +101,10 @@ class WeightedBCEWithLogitsLoss(nn.Module):
 
         labels_expanded = labels.unsqueeze(0).expand(n_samples, -1, -1)
 
-        loss_samples = self.loss_fct_none(
-            logits_samples, labels_expanded
+        loss_samples = F.binary_cross_entropy_with_logits(
+            logits_samples,
+            labels_expanded.to(logits_samples.dtype),
+            pos_weight=self.pos_weights,
+            reduction="none",
         )  # (n_samples, B, num_labels)
-
-        loss = loss_samples.mean(dim=0).mean()
-
-        return loss
+        return loss_samples.mean(dim=0).mean()

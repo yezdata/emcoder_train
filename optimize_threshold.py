@@ -4,7 +4,7 @@ import numpy as np
 from scipy.special import expit
 from sklearn.metrics import f1_score
 
-from src.config_models import ClassifierConfig, ThresholdOptimizationConfig
+from src.config_models import EmCoderConfig, ThresholdOptimizationConfig
 
 
 def optimize_thresholds(
@@ -53,7 +53,7 @@ def main() -> None:
     mean_probs = probs.mean(axis=0)  # (N, num_labels)
 
     with open(f"{config.model_path}/config.json", "r") as f:
-        model_config = ClassifierConfig.model_validate_json(f.read())
+        model_config = EmCoderConfig.model_validate_json(f.read())
 
     label_names = [model_config.id2label[i] for i in range(model_config.num_labels)]
 

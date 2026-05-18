@@ -1,14 +1,14 @@
 import torch
 import torch.nn as nn
 
-from ..config_models import ModelConfig
+from ..config_models import EmCoderEncoderConfig
 from ..types_shapes import BatchIDs, BatchMask, TokenEmbeds
 
 
-class EmCoderCore(nn.Module):
-    """The core encoder architecture of EmCoder, without the classification head."""
+class EmCoderEncoder(nn.Module):
+    """The core encoder architecture of EmCoder Transformer."""
 
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: EmCoderEncoderConfig):
         super().__init__()
 
         self.token_embedding = nn.Embedding(config.vocab_size, config.d_model)
@@ -26,7 +26,9 @@ class EmCoderCore(nn.Module):
             batch_first=True,
         )
         self.encoder = nn.TransformerEncoder(
-            encoder_layer=encoder_layer, num_layers=config.n_layers
+            encoder_layer=encoder_layer,
+            num_layers=config.n_layers,
+            enable_nested_tensor=False,
         )
 
         self.final_norm = nn.LayerNorm(config.d_model)

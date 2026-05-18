@@ -1,8 +1,10 @@
-from pydantic import model_validator, field_validator
+import os
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class ModelConfig(BaseSettings):
+class EmCoderEncoderConfig(BaseSettings):
     vocab_size: int
     max_seq_len: int
 
@@ -13,10 +15,12 @@ class ModelConfig(BaseSettings):
 
     dropout: float
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="ENCODER_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="ENCODER_", extra="ignore"
+    )
 
 
-class ClassifierConfig(ModelConfig):
+class EmCoderConfig(EmCoderEncoderConfig):
     num_labels: int
     id2label: dict[int, str]
     label2id: dict[str, int]
@@ -28,13 +32,25 @@ class ClassifierConfig(ModelConfig):
     def coerce_keys_to_int(cls, v):
         return {int(k): val for k, val in v.items()}
 
+    @model_validator(mode="before")
+    @classmethod
+    def override_dropout_from_env(cls, data):
+        env_dropout = os.getenv("CLASSIFIER_DROPOUT")
+
+        if env_dropout is not None and isinstance(data, dict):
+            data["dropout"] = float(env_dropout)
+
+        return data
+
     @model_validator(mode="after")
     def check_consistency(self):
         if len(self.id2label) != self.num_labels:
             raise ValueError("num_labels does not match id2label dictionary len")
         return self
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="CLASSIFIER_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="CLASSIFIER_", extra="ignore"
+    )
 
 
 class PretrainConfig(BaseSettings):
@@ -49,7 +65,9 @@ class PretrainConfig(BaseSettings):
     gradient_accumulation_steps: int
     num_epochs: int
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="PRETRAIN_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="PRETRAIN_", extra="ignore"
+    )
 
 
 class FinetuneConfig(BaseSettings):
@@ -67,8 +85,9 @@ class FinetuneConfig(BaseSettings):
     gradient_accumulation_steps: int
     num_epochs: int
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="FINETUNE_", extra="ignore")
-
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="FINETUNE_", extra="ignore"
+    )
 
 
 class InferenceConfig(BaseSettings):
@@ -81,15 +100,18 @@ class InferenceConfig(BaseSettings):
 
     output_file: str
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="INFERENCE_", extra="ignore")
-
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="INFERENCE_", extra="ignore"
+    )
 
 
 class ThresholdOptimizationConfig(BaseSettings):
     input_file: str
     model_path: str
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="THRESHOLD_OPTIMIZATION_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="THRESHOLD_OPTIMIZATION_", extra="ignore"
+    )
 
 
 class EvalConfig(BaseSettings):
@@ -98,4 +120,6 @@ class EvalConfig(BaseSettings):
     input_file: str
     output_path: str
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="EVAL_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_prefix="EVAL_", extra="ignore"
+    )

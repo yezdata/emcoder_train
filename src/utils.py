@@ -6,7 +6,7 @@ from accelerate import Accelerator
 from pydantic_settings import BaseSettings
 from safetensors.torch import save_file
 from torch import nn
-from transformers import RobertaTokenizerFast
+from transformers import RobertaTokenizerFast  # type:ignore
 
 
 def init_weights(module):
@@ -21,7 +21,7 @@ def init_weights(module):
         nn.init.zeros_(module.bias)
 
 
-def save_encoder(
+def save_emcoder_encoder(
     accelerator: Accelerator,
     model: nn.Module,
     save_path: str,

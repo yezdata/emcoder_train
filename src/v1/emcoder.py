@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from ..config_models import ClassifierConfig
+from ..config_models import EmCoderConfig
 from ..types_shapes import (
     BatchIDs,
     BatchMask,
@@ -10,16 +10,16 @@ from ..types_shapes import (
     MeanPooled,
     TokenEmbeds,
 )
-from .emcoder_core import EmCoderCore
+from .backbone_encoder import EmCoderEncoder
 
 
-class ClassificationHead(nn.Module):
-    """The full EmCoder model, including the classification head."""
+class EmCoder(nn.Module):
+    """The full EmCoder model, including the backbone encoder and the classification head."""
 
-    def __init__(self, encoder: EmCoderCore, config: ClassifierConfig):
+    def __init__(self, config: EmCoderConfig):
         super().__init__()
 
-        self.encoder = encoder
+        self.encoder = EmCoderEncoder(config)
 
         self.classifier = nn.Sequential(
             nn.Linear(config.d_model, config.d_model),

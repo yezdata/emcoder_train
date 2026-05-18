@@ -1,7 +1,6 @@
 # V2
 **! LONGER PRETRAIN**
-- MIX other data with openwebtext and get more tokens as whole -> run 1-2 epoch
-/ TAKE 1.5 EPOCH PRETRAIN -> CONTINUE ON NEW DATA (MIXED OPENWEBTEXT + NEW)
+- MIX NEW data with openwebtext and get more tokens as whole -> run 1-2 epoch
 
 - MORE ENCODER PARAMS? - 120M-150M?
 

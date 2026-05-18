@@ -4,11 +4,11 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.special import expit
 import seaborn as sns
-from sklearn.metrics import classification_report, multilabel_confusion_matrix, f1_score
+from scipy.special import expit
+from sklearn.metrics import classification_report, f1_score, multilabel_confusion_matrix
 
-from src.config_models import ClassifierConfig, EvalConfig
+from src.config_models import EmCoderConfig, EvalConfig
 
 
 def plot_per_label_scatters(
@@ -73,22 +73,23 @@ def load_inference_outputs(input_file: str) -> tuple:
 
     mean_probs = probs.mean(axis=0)  # (N, num_labels)
 
-
     # ENTROPY-BASED UNCERTAINTY DECOMPOSITION
     eps = 1e-12
     # Predictive Entropy
     total_unc = -(
-        mean_probs * np.log(mean_probs + eps) + (1 - mean_probs) * np.log(1 - mean_probs + eps)
+        mean_probs * np.log(mean_probs + eps)
+        + (1 - mean_probs) * np.log(1 - mean_probs + eps)
     )
 
     # Expected Entropy
-    sample_entropies = -(probs * np.log(probs + eps) + (1 - probs) * np.log(1 - probs + eps))
+    sample_entropies = -(
+        probs * np.log(probs + eps) + (1 - probs) * np.log(1 - probs + eps)
+    )
     aleatoric_unc = sample_entropies.mean(axis=0)
 
     # Mutual Information
     epistemic_unc = total_unc - aleatoric_unc
     epistemic_unc = np.maximum(epistemic_unc, 0)
-
 
     # # VARIANCE-BASED UNCERTAINTY DECOMPOSITION
     # epistemic_unc = probs.var(axis=0)
@@ -96,7 +97,6 @@ def load_inference_outputs(input_file: str) -> tuple:
     # total_unc = epistemic_unc + aleatoric_unc
 
     return mean_probs, total_unc, epistemic_unc, aleatoric_unc, labels
-
 
 
 def plot_f1_rejection_curve(
@@ -185,7 +185,6 @@ def plot_f1_rejection_curve(
     plt.close()
 
 
-
 def plot_uncertainty_ridge(
     uncertainty: np.ndarray, label_names: list, output_file: str, unc_type: str
 ) -> None:
@@ -209,9 +208,8 @@ def plot_uncertainty_ridge(
     plt.close()
 
 
-def main(
-) -> None:
-    config = EvalConfig() # type:ignore
+def main() -> None:
+    config = EvalConfig()  # type:ignore
 
     os.makedirs(f"{config.output_path}/each_label", exist_ok=True)
 
@@ -228,7 +226,7 @@ def main(
     )
 
     with open(f"{config.model_path}/config.json", "r") as f:
-        model_config = ClassifierConfig.model_validate_json(f.read())
+        model_config = EmCoderConfig.model_validate_json(f.read())
 
     # Calculate metrics
     label_names = [model_config.id2label[i] for i in range(model_config.num_labels)]
@@ -297,7 +295,7 @@ def main(
     plt.ylabel("Mean Predicted Probability")
     leg = plt.legend(title="Prediction Correct")
     for lh in leg.legend_handles:
-        lh.set_alpha(1.0) # type: ignore
+        lh.set_alpha(1.0)  # type: ignore
     plt.savefig(f"{config.output_path}/epistemic_unc_scatter.png")
     plt.close()
 
@@ -314,7 +312,7 @@ def main(
     plt.ylabel("Mean Predicted Probability")
     leg = plt.legend(title="Prediction Correct")
     for lh in leg.legend_handles:
-        lh.set_alpha(1.0) # type: ignore
+        lh.set_alpha(1.0)  # type: ignore
     plt.savefig(f"{config.output_path}/aleatoric_unc_scatter.png")
     plt.close()
 
@@ -328,11 +326,33 @@ def main(
         config.output_path,
     )
 
-    plot_uncertainty_ridge(aleatoric_unc, label_names, f"{config.output_path}/ridge_aleatoric.png", unc_type="Aleatoric")
-    plot_uncertainty_ridge(epistemic_unc, label_names, f"{config.output_path}/ridge_epistemic.png", unc_type="Epistemic")
+    plot_uncertainty_ridge(
+        aleatoric_unc,
+        label_names,
+        f"{config.output_path}/ridge_aleatoric.png",
+        unc_type="Aleatoric",
+    )
+    plot_uncertainty_ridge(
+        epistemic_unc,
+        label_names,
+        f"{config.output_path}/ridge_epistemic.png",
+        unc_type="Epistemic",
+    )
 
-    plot_f1_rejection_curve(preds, epistemic_unc, all_labels, label_names, f"{config.output_path}/f1_rejection_epistemic.png")
-    plot_f1_rejection_curve(preds, aleatoric_unc, all_labels, label_names, f"{config.output_path}/f1_rejection_aleatoric.png")
+    plot_f1_rejection_curve(
+        preds,
+        epistemic_unc,
+        all_labels,
+        label_names,
+        f"{config.output_path}/f1_rejection_epistemic.png",
+    )
+    plot_f1_rejection_curve(
+        preds,
+        aleatoric_unc,
+        all_labels,
+        label_names,
+        f"{config.output_path}/f1_rejection_aleatoric.png",
+    )
 
     mcm = multilabel_confusion_matrix(all_labels, preds)
     for i, label in enumerate(label_names):

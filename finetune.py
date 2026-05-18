@@ -2,10 +2,8 @@ import os
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-from typing import Literal
 import numpy as np
 import torch
-import torch.nn as nn
 from accelerate import Accelerator
 from datasets import load_from_disk
 from dotenv import load_dotenv
@@ -17,26 +15,25 @@ from transformers import (
     get_cosine_schedule_with_warmup,
 )
 
-from src.config_models import ClassifierConfig, FinetuneConfig, ModelConfig
-from src.losses import WeightedBCEWithLogitsLoss, AsymmetricLoss
+from src.config_models import EmCoderConfig, EmCoderEncoderConfig, FinetuneConfig
+from src.losses import AsymmetricLoss, WeightedBCEWithLogitsLoss
 from src.utils import init_weights, save_emcoder
-from src.v1.class_head import ClassificationHead
-from src.v1.emcoder_core import EmCoderCore
+from src.v1.emcoder import EmCoder
 
 
 def compute_metrics(probs: np.ndarray, labels: np.ndarray) -> dict:
     preds = (probs > 0.5).astype(int)
 
     return {
-        "f1_macro": f1_score(labels, preds, average="macro", zero_division=0),
-        "f1_micro": f1_score(labels, preds, average="micro", zero_division=0),
+        "f1_macro": f1_score(labels, preds, average="macro", zero_division=0),  # type:ignore
+        "f1_micro": f1_score(labels, preds, average="micro", zero_division=0),  # type:ignore
         "roc_auc": roc_auc_score(labels, probs, average="macro"),
     }
 
 
 def evaluate_bayesian(
     criterion: AsymmetricLoss | WeightedBCEWithLogitsLoss,
-    model: ClassificationHead,
+    model: EmCoder,
     dataloader: torch.utils.data.DataLoader,
     n_samples: int,
     max_batch_size: int,
@@ -58,7 +55,7 @@ def evaluate_bayesian(
             loss = criterion.compute_bayesian_loss(logits_samples, batch["labels"])
             total_loss += loss.detach().item()
 
-            probs = torch.sigmoid(logits_samples)
+            probs = logits_samples.sigmoid()
             mean_probs = probs.mean(dim=0)  # (B, num_labels)
 
             all_pred_probs.append(mean_probs.detach().cpu().numpy())
@@ -83,7 +80,7 @@ def main(
     max_batch_size = train_config.n_samples
 
     with open(f"{encoder_path}/config.json", "r") as f:
-        encoder_config = ModelConfig.model_validate_json(f.read())
+        encoder_config = EmCoderEncoderConfig.model_validate_json(f.read())
 
     with open("data/goemotions/emotions.txt", "r", encoding="utf-8") as f:
         label_names = [line.strip() for line in f.readlines()]
@@ -91,27 +88,24 @@ def main(
     id2label = {i: label for i, label in enumerate(label_names)}
     label2id = {label: i for i, label in enumerate(label_names)}
 
-    model_config = ClassifierConfig(
+    model_config = EmCoderConfig(
         **encoder_config.model_dump(),
         base_encoder_path=encoder_path,
         num_labels=len(label_names),
         id2label=id2label,
         label2id=label2id,
     )
-    dropout_rate = os.getenv("CLASSIFIER_DROPOUT", None)
-    model_config.dropout = float(dropout_rate)
 
     accelerator = Accelerator(
         gradient_accumulation_steps=train_config.gradient_accumulation_steps,
     )
 
-    encoder = EmCoderCore(encoder_config)
-    encoder.load_state_dict(
+    model = EmCoder(model_config)
+
+    model.encoder.load_state_dict(
         torch.load(f"{encoder_path}/encoder_only.pth", map_location=accelerator.device),
         strict=True,
     )
-
-    model = ClassificationHead(encoder, model_config)
 
     model.classifier.apply(init_weights)
 
@@ -163,30 +157,20 @@ def main(
         num_training_steps=total_steps,
     )
 
-    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = (
-        accelerator.prepare(
-            model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
-        )
-    )
-
     # computing the weights of labels
     pos_counts = np.sum(np.array(tokenized_train_ds["labels"]), axis=0)
     neg_counts = len(tokenized_train_ds) - pos_counts
 
-    # NOTE: USE LOG FOR NUM STABILITY
-    # - 1e-5 avoids division by zero
-    raw_weights = 1 + np.log((neg_counts + 1e-5) / (pos_counts + 1e-5))
+    criterion = WeightedBCEWithLogitsLoss(pos_counts=pos_counts, neg_counts=neg_counts)
+    print("Label Weights:", criterion.pos_weights)
 
-    # PREVENT EXTREME WEIGTHS
-    raw_weights = np.clip(raw_weights, a_min=0.1, a_max=20.0)
-    weights = torch.tensor(raw_weights, dtype=torch.float32)
-
-    print("Label Weights:", weights)
+    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler, criterion = (
+        accelerator.prepare(
+            model, optimizer, train_dataloader, eval_dataloader, lr_scheduler, criterion
+        )
+    )
 
     # TRAIN LOOP
-    criterion = WeightedBCEWithLogitsLoss(
-        device=accelerator.device, pos_weights=weights
-    )
 
     # freeze encoder for first 500 steps
     # accelerator.unwrap_model(model).encoder.requires_grad_(False)

@@ -1,20 +1,18 @@
 import torch
 import torch.nn as nn
-from tqdm import tqdm
 from accelerate import Accelerator
+from datasets import load_from_disk
+from tqdm import tqdm
 from transformers import (
-    RobertaTokenizerFast, # type: ignore
     DataCollatorForLanguageModeling,
+    RobertaTokenizerFast,  # type: ignore
     get_cosine_schedule_with_warmup,
 )
-from datasets import load_from_disk
 
-from src.config_models import ModelConfig, PretrainConfig
+from src.config_models import EmCoderEncoderConfig, PretrainConfig
 from src.types_shapes import MLMLabels, MLMLogits
-from src.utils import save_encoder, init_weights
-from src.v1.emcoder_core import EmCoderCore
+from src.utils import init_weights, save_emcoder_encoder
 from src.v1.mlm_head import MLMHead
-
 
 torch.manual_seed(1337)
 
@@ -47,18 +45,17 @@ def evaluate(
 def main(save_path: str) -> None:
     tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
 
-    model_config = ModelConfig(
+    model_config = EmCoderEncoderConfig(
         vocab_size=tokenizer.vocab_size,
-    ) # type: ignore
+    )  # type: ignore
 
-    train_config = PretrainConfig() # type: ignore
+    train_config = PretrainConfig()  # type: ignore
 
     accelerator = Accelerator(
         gradient_accumulation_steps=train_config.gradient_accumulation_steps
     )
 
-    encoder = EmCoderCore(model_config)
-    model = MLMHead(encoder, model_config)
+    model = MLMHead(model_config)
 
     model.apply(init_weights)
 
@@ -70,7 +67,7 @@ def main(save_path: str) -> None:
     tokenized_eval_ds = load_from_disk(f"{train_config.tokenized_ds_dir}/eval")
 
     train_dataloader = torch.utils.data.DataLoader(
-        tokenized_train_ds, # type: ignore
+        tokenized_train_ds,  # type: ignore
         batch_size=train_config.batch_size,
         collate_fn=data_collator,
         shuffle=True,
@@ -78,7 +75,7 @@ def main(save_path: str) -> None:
         pin_memory=True,
     )
     eval_dataloader = torch.utils.data.DataLoader(
-        tokenized_eval_ds, # type: ignore
+        tokenized_eval_ds,  # type: ignore
         batch_size=train_config.batch_size,
         collate_fn=data_collator,
         shuffle=False,
@@ -144,7 +141,7 @@ def main(save_path: str) -> None:
 
                 step_path = f"{save_path}/checkpoints/epoch_{epoch + 1}/step_{step}"
 
-                save_encoder(
+                save_emcoder_encoder(
                     accelerator,
                     model,
                     step_path,
@@ -163,7 +160,7 @@ def main(save_path: str) -> None:
             f"FINISH EPOCH {epoch + 1} | TRAIN Loss: {avg_loss:.4f} | Eval Loss: {eval_loss:.4f}"
         )
 
-    save_encoder(accelerator, model, save_path, model_config, train_config)
+    save_emcoder_encoder(accelerator, model, save_path, model_config, train_config)
 
 
 if __name__ == "__main__":
