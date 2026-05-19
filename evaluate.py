@@ -7,6 +7,7 @@ import pandas as pd
 import seaborn as sns
 from scipy.special import expit
 from sklearn.metrics import classification_report, f1_score, multilabel_confusion_matrix
+from sklearn.calibration import calibration_curve
 
 from src.config_models import EmCoderConfig, EvalConfig
 
@@ -60,6 +61,43 @@ def plot_per_label_scatters(
 
         plt.tight_layout()
         plt.savefig(f"{output_dir}/label_scatters/{label_name}_scatters.png")
+        plt.close()
+
+
+def plot_per_label_calibrations(
+    all_labels: np.ndarray, mean_probs: np.ndarray, label_names: list, output_dir: str
+) -> None:
+    os.makedirs(f"{output_dir}/label_calibrations", exist_ok=True)
+
+    for i, label in enumerate(label_names):
+        prob_true, prob_pred = calibration_curve(
+            all_labels[:, i], mean_probs[:, i], n_bins=10, strategy="quantile"
+        )
+        plt.plot(
+            [0, 1], [0, 1], linestyle="--", color="gray", label="Perfectly calibrated"
+        )
+        plt.plot(prob_pred, prob_true, marker="o", linewidth=2, label="Model")
+        plt.xlabel("Mean Predicted Probability")
+        plt.ylabel("Fraction of True Labels")
+        plt.title(f"Calibration Curve for {label}")
+        plt.legend(loc="upper left")
+        plt.grid(True, linestyle="--", alpha=0.6)
+        plt.savefig(f"{output_dir}/label_calibrations/calibration_{label}.png")
+        plt.close()
+
+
+def plot_per_label_cms(
+    all_labels: np.ndarray, preds: np.ndarray, label_names: list, output_dir: str
+) -> None:
+    os.makedirs(f"{output_dir}/label_cms", exist_ok=True)
+
+    mcm = multilabel_confusion_matrix(all_labels, preds)
+    for i, label in enumerate(label_names):
+        sns.heatmap(mcm[i], annot=True, fmt="d", cmap="Blues")
+        plt.xlabel("Predicted")
+        plt.ylabel("Actual")
+        plt.title(f"Confusion Matrix for {label}")
+        plt.savefig(f"{output_dir}/label_cms/confusion_matrix_{label}.png")
         plt.close()
 
 
@@ -208,45 +246,9 @@ def plot_uncertainty_ridge(
     plt.close()
 
 
-def main() -> None:
-    config = EvalConfig()  # type:ignore
-
-    os.makedirs(f"{config.output_path}/each_label", exist_ok=True)
-
-    # load optimized thresholds
-    with open(f"{config.model_path}/thresholds.json", "r") as f:
-        thresholds = json.load(f)
-
-    plt.rcParams["figure.figsize"] = (14, 10)
-    sns.set_theme(style="whitegrid")
-
-    # load inference outputs
-    mean_probs, total_unc, epistemic_unc, aleatoric_unc, all_labels = (
-        load_inference_outputs(config.input_file)
-    )
-
-    with open(f"{config.model_path}/config.json", "r") as f:
-        model_config = EmCoderConfig.model_validate_json(f.read())
-
-    # Calculate metrics
-    label_names = [model_config.id2label[i] for i in range(model_config.num_labels)]
-
-    preds = np.zeros_like(all_labels)
-    for i, label_name in enumerate(label_names):
-        p_thresh = thresholds[label_name]["p"]
-        preds[:, i] = (mean_probs[:, i] > p_thresh).astype(int)
-
-    report_dict = classification_report(
-        all_labels, preds, target_names=label_names, zero_division=0, output_dict=True
-    )
-    df_report = pd.DataFrame(report_dict).transpose()
-    df_report = df_report.round(3)
-    df_report["support"] = df_report["support"].astype(int)
-    df_report.index.name = "label"
-    df_report = df_report.reset_index()
-    df_report.to_csv(f"{config.output_path}/classification_report.csv", index=False)
-    print(df_report)
-
+def plot_multilabel_cm(
+    all_labels: np.ndarray, preds: np.ndarray, label_names: list, output_file: str
+) -> None:
     conf_matrix = np.dot(all_labels.T, preds)
 
     # normalization to recall -> rows
@@ -264,24 +266,11 @@ def main() -> None:
     plt.title(
         "Multi-label Confusion Matrix (% of times label j predicted when i is true)"
     )
-    plt.savefig(f"{config.output_path}/confusion_matrix.png")
+    plt.savefig(output_file)
     plt.close()
 
-    prob_flat = mean_probs.flatten()
-    preds_flat = preds.flatten()
-    labels_flat = all_labels.flatten()
 
-    is_correct = preds_flat == labels_flat
-
-    plot_df = pd.DataFrame(
-        {
-            "Probability": prob_flat,
-            "Epistemic Uncertainty": epistemic_unc.flatten(),
-            "Aleatoric Uncertainty": aleatoric_unc.flatten(),
-            "Correct": is_correct,
-        }
-    )
-
+def plot_flat_scatters(plot_df: pd.DataFrame, output_dir: str) -> None:
     sns.scatterplot(
         data=plot_df,
         x="Epistemic Uncertainty",
@@ -296,7 +285,7 @@ def main() -> None:
     leg = plt.legend(title="Prediction Correct")
     for lh in leg.legend_handles:
         lh.set_alpha(1.0)  # type: ignore
-    plt.savefig(f"{config.output_path}/epistemic_unc_scatter.png")
+    plt.savefig(f"{output_dir}/epistemic_unc_scatter.png")
     plt.close()
 
     sns.scatterplot(
@@ -313,8 +302,74 @@ def main() -> None:
     leg = plt.legend(title="Prediction Correct")
     for lh in leg.legend_handles:
         lh.set_alpha(1.0)  # type: ignore
-    plt.savefig(f"{config.output_path}/aleatoric_unc_scatter.png")
+    plt.savefig(f"{output_dir}/aleatoric_unc_scatter.png")
     plt.close()
+
+
+def get_report_df(
+    all_labels: np.ndarray, preds: np.ndarray, label_names: list
+) -> pd.DataFrame:
+    report_dict = classification_report(
+        all_labels, preds, target_names=label_names, zero_division=0, output_dict=True
+    )
+    df_report = pd.DataFrame(report_dict).transpose()
+    df_report = df_report.round(3)
+    df_report["support"] = df_report["support"].astype(int)
+    df_report.index.name = "label"
+    df_report = df_report.reset_index()
+    return df_report
+
+
+def main() -> None:
+    config = EvalConfig()  # type:ignore
+
+    # load optimized thresholds
+    with open(f"{config.model_path}/thresholds.json", "r") as f:
+        thresholds = json.load(f)
+
+    plt.rcParams["figure.figsize"] = (14, 10)
+    sns.set_theme(style="whitegrid")
+
+    # load inference outputs
+    mean_probs, total_unc, epistemic_unc, aleatoric_unc, all_labels = (
+        load_inference_outputs(config.input_file)
+    )
+
+    with open(f"{config.model_path}/config.json", "r") as f:
+        model_config = EmCoderConfig.model_validate_json(f.read())
+
+    label_names = [model_config.id2label[i] for i in range(model_config.num_labels)]
+
+    # get predictions using optimized thresholds
+    preds = np.zeros_like(all_labels)
+    for i, label_name in enumerate(label_names):
+        p_thresh = thresholds[label_name]["p"]
+        preds[:, i] = (mean_probs[:, i] > p_thresh).astype(int)
+
+    report_df = get_report_df(all_labels, preds, label_names)
+    report_df.to_csv(f"{config.output_path}/classification_report.csv", index=False)
+    print(report_df)
+
+    plot_multilabel_cm(
+        all_labels, preds, label_names, f"{config.output_path}/confusion_matrix.png"
+    )
+
+    prob_flat = mean_probs.flatten()
+    preds_flat = preds.flatten()
+    labels_flat = all_labels.flatten()
+
+    is_correct = preds_flat == labels_flat
+
+    plot_df = pd.DataFrame(
+        {
+            "Probability": prob_flat,
+            "Epistemic Uncertainty": epistemic_unc.flatten(),
+            "Aleatoric Uncertainty": aleatoric_unc.flatten(),
+            "Correct": is_correct,
+        }
+    )
+
+    plot_flat_scatters(plot_df, config.output_path)
 
     plot_per_label_scatters(
         mean_probs,
@@ -354,14 +409,9 @@ def main() -> None:
         f"{config.output_path}/f1_rejection_aleatoric.png",
     )
 
-    mcm = multilabel_confusion_matrix(all_labels, preds)
-    for i, label in enumerate(label_names):
-        sns.heatmap(mcm[i], annot=True, fmt="d", cmap="Blues")
-        plt.xlabel("Predicted")
-        plt.ylabel("Actual")
-        plt.title(f"Confusion Matrix for {label}")
-        plt.savefig(f"{config.output_path}/each_label/confusion_matrix_{label}.png")
-        plt.close()
+    plot_per_label_calibrations(all_labels, mean_probs, label_names, config.output_path)
+
+    plot_per_label_cms(all_labels, preds, label_names, config.output_path)
 
 
 if __name__ == "__main__":
