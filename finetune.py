@@ -4,21 +4,23 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import numpy as np
 import torch
+import torch.nn as nn
 from accelerate import Accelerator
+from accelerate.utils import set_seed
 from datasets import load_from_disk
 from dotenv import load_dotenv
 from sklearn.metrics import f1_score, roc_auc_score
 from tqdm import tqdm
 from transformers import (
+    AutoTokenizer,
     DataCollatorWithPadding,
-    RobertaTokenizerFast,  # type:ignore
     get_cosine_schedule_with_warmup,
 )
 
 from src.config_models import EmCoderConfig, EmCoderEncoderConfig, FinetuneConfig
 from src.losses import AsymmetricLoss, WeightedBCEWithLogitsLoss
 from src.utils import init_weights, save_emcoder
-from src.v1.emcoder import EmCoder
+from src.v2.emcoder import EmCoder
 
 
 def compute_metrics(probs: np.ndarray, labels: np.ndarray) -> dict:
@@ -51,6 +53,7 @@ def evaluate_bayesian(
                 n_samples=n_samples,
                 max_batch_size=max_batch_size,
             )
+            logits_samples = logits_samples.detach()
 
             loss = criterion.compute_bayesian_loss(logits_samples, batch["labels"])
             total_loss += loss.detach().item()
@@ -73,8 +76,11 @@ def main(
     save_path: str,
     encoder_path: str,
 ) -> None:
-    load_dotenv()
     os.makedirs(save_path, exist_ok=True)
+
+    load_dotenv()
+
+    set_seed(1337)
 
     train_config = FinetuneConfig()  # type:ignore
     max_batch_size = train_config.n_samples
@@ -108,8 +114,12 @@ def main(
     )
 
     model.classifier.apply(init_weights)
+    # Scale down the final logit layer -> uniform outputs for classes
+    nn.init.trunc_normal_(model.classifier[-1].weight, std=0.005)
+    if model.classifier[-1].bias is not None:
+        nn.init.zeros_(model.classifier[-1].bias)
 
-    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+    tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-base")
 
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
@@ -223,7 +233,6 @@ def main(
             f"{save_path}/epoch_{epoch + 1}",
             model_config,
             train_config,
-            tokenizer=tokenizer,
             loss=avg_loss,
             eval_loss=eval_loss,
         )

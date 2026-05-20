@@ -1,20 +1,19 @@
 import torch
 import torch.nn as nn
 from accelerate import Accelerator
+from accelerate.utils import set_seed
 from datasets import load_from_disk
 from tqdm import tqdm
 from transformers import (
+    AutoTokenizer,
     DataCollatorForLanguageModeling,
-    RobertaTokenizerFast,  # type: ignore
     get_cosine_schedule_with_warmup,
 )
 
 from src.config_models import EmCoderEncoderConfig, PretrainConfig
 from src.types_shapes import MLMLabels, MLMLogits
-from src.utils import init_weights, save_emcoder_encoder
-from src.v1.mlm_head import MLMHead
-
-torch.manual_seed(1337)
+from src.utils import init_weights_modern, save_emcoder_encoder
+from src.v2.mlm_head import MLMHead
 
 
 def compute_loss(
@@ -28,22 +27,30 @@ def evaluate(
     criterion: nn.CrossEntropyLoss,
     model: MLMHead,
     dataloader: torch.utils.data.DataLoader,
+    max_eval_steps: int = 100,
 ) -> float:
     model.eval()
-
     total_loss = 0.0
+    steps_run = 0
+
     with torch.no_grad():
         for batch in dataloader:
+            if steps_run >= max_eval_steps:
+                break
             outputs = model(batch["input_ids"], batch["attention_mask"])
             loss = compute_loss(criterion, outputs, batch["labels"])
 
             total_loss += loss.detach().item()
+            steps_run += 1
 
-    return total_loss / len(dataloader)
+    return total_loss / max(steps_run, 1)
 
 
 def main(save_path: str) -> None:
-    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+    set_seed(1337)
+
+    tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-base")
+    tokenizer.save_pretrained(save_path)
 
     model_config = EmCoderEncoderConfig(
         vocab_size=tokenizer.vocab_size,
@@ -57,7 +64,7 @@ def main(save_path: str) -> None:
 
     model = MLMHead(model_config)
 
-    model.apply(init_weights)
+    model.apply(lambda m: init_weights_modern(m, model_config.n_layers))
 
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer, mlm=True, mlm_probability=0.15
@@ -108,11 +115,12 @@ def main(save_path: str) -> None:
     # TRAIN LOOP
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
 
-    for epoch in range(train_config.num_epochs):
-        epoch_loss = 0.0
-        num_batches = 0
+    running_loss = 0.0
+    running_steps = 0
 
+    for epoch in range(train_config.num_epochs):
         model.train()
+
         for step, batch in tqdm(
             enumerate(train_dataloader), total=len(train_dataloader)
         ):
@@ -125,21 +133,26 @@ def main(save_path: str) -> None:
                 lr_scheduler.step()
                 optimizer.zero_grad()
 
-                epoch_loss += loss.detach().item()
-                num_batches += 1
+                running_loss += loss.detach().item()
+                running_steps += 1
 
-            if step % 1000 == 0:
+            if step % 1000 == 0 and step > 0:
+                avg_train_loss = running_loss / running_steps
                 accelerator.print(
-                    f"Epoch {epoch + 1} | Step {step} | TRAIN  Loss: {loss.item():.4f}"
+                    f"Epoch {epoch + 1} | Step {step} | TRAIN  Loss: {avg_train_loss:.4f}"
                 )
+                running_loss = 0.0
+                running_steps = 0
 
             if step % 10000 == 0 and step > 0:
-                eval_loss = evaluate(criterion, model, eval_dataloader)
+                eval_loss = evaluate(
+                    criterion, model, eval_dataloader, max_eval_steps=100
+                )
                 accelerator.print(
-                    f"TRAIN Loss: {loss.item():.4f} | Eval Loss: {eval_loss:.4f}"
+                    f"CHECKPOINT {step} | TRAIN Loss: {loss.item():.4f} | Eval Loss: {eval_loss:.4f}"
                 )
 
-                step_path = f"{save_path}/checkpoints/epoch_{epoch + 1}/step_{step}"
+                step_path = f"{save_path}/epoch_{epoch + 1}/step_{step}"
 
                 save_emcoder_encoder(
                     accelerator,
@@ -153,17 +166,16 @@ def main(save_path: str) -> None:
 
                 model.train()
 
-        avg_loss = epoch_loss / num_batches
+        epoch_path = f"{save_path}/epoch_{epoch + 1}"
+        save_emcoder_encoder(accelerator, model, epoch_path, model_config, train_config)
 
-        eval_loss = evaluate(criterion, model, eval_dataloader)
-        accelerator.print(
-            f"FINISH EPOCH {epoch + 1} | TRAIN Loss: {avg_loss:.4f} | Eval Loss: {eval_loss:.4f}"
+        eval_loss = evaluate(
+            criterion, model, eval_dataloader, max_eval_steps=len(eval_dataloader)
         )
-
-    save_emcoder_encoder(accelerator, model, save_path, model_config, train_config)
+        accelerator.print(f"FINISH EPOCH {epoch + 1} | Eval Loss: {eval_loss:.4f}")
 
 
 if __name__ == "__main__":
-    SAVE_PATH = "models/v1/pretrain"
+    SAVE_PATH = "models/v2/pretrain"
 
     main(SAVE_PATH)

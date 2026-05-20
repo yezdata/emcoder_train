@@ -6,10 +6,10 @@ from accelerate import Accelerator
 from datasets import load_from_disk
 from safetensors.torch import load_file
 from tqdm import tqdm
-from transformers import DataCollatorWithPadding, RobertaTokenizerFast  # type:ignore
+from transformers import AutoTokenizer, DataCollatorWithPadding
 
 from src.config_models import EmCoderConfig, InferenceConfig
-from src.v1.emcoder import EmCoder
+from src.v2.emcoder import EmCoder
 
 
 def main() -> None:
@@ -30,7 +30,7 @@ def main() -> None:
     state_dict = load_file(f"{inference_config.emcoder_path}/model.safetensors")
     model.load_state_dict(state_dict, strict=True)
 
-    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+    tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-base")
 
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
@@ -63,6 +63,7 @@ def main() -> None:
                 n_samples=inference_config.n_samples,
                 max_batch_size=max_batch_size,
             )
+            logits_samples = logits_samples.detach()
 
             all_logits.append(logits_samples.cpu().numpy())
             all_labels.append(batch["labels"].cpu().numpy())
