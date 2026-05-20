@@ -6,7 +6,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class EmCoderEncoderConfig(BaseSettings):
     vocab_size: int
-    max_seq_len: int
 
     d_model: int
     n_head: int
