@@ -63,6 +63,15 @@ def process_and_save_shard(name, get_dataset_fn, tokenizer, max_seq_len, cache_p
     print(f"[{name}] Generating and processing...")
     ds = get_dataset_fn()
 
+    if name == "C4":
+        raw_txt_tmp = f"{cache_path}_raw_text_tmp"
+        if os.path.exists(raw_txt_tmp):
+            ds = load_from_disk(raw_txt_tmp)
+        else:
+            print(f"[{name}] flushing C4 raw text to disk...")
+            ds.save_to_disk(raw_txt_tmp)
+            ds = load_from_disk(raw_txt_tmp)
+
     if name != "C4":
         print(f"[{name}] Filtering...")
         ds = ds.filter(
@@ -85,6 +94,7 @@ def process_and_save_shard(name, get_dataset_fn, tokenizer, max_seq_len, cache_p
 
     tokenized.save_to_disk(tmp_cache_path)
     os.rename(tmp_cache_path, cache_path)
+
     return tokenized
 
 
