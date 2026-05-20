@@ -52,8 +52,11 @@ def main(save_path: str) -> None:
     tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-base")
     tokenizer.save_pretrained(save_path)
 
+    # model_config = EmCoderEncoderConfig(
+    #     vocab_size=tokenizer.vocab_size,
+    # )  # type: ignore
     model_config = EmCoderEncoderConfig(
-        vocab_size=tokenizer.vocab_size,
+        vocab_size=len(tokenizer),
     )  # type: ignore
 
     train_config = PretrainConfig()  # type: ignore
@@ -90,27 +93,27 @@ def main(save_path: str) -> None:
         pin_memory=True,
     )
 
-    total_steps = (
-        len(train_dataloader) * train_config.num_epochs
-    ) // train_config.gradient_accumulation_steps
-
     optimizer = torch.optim.AdamW(
         model.parameters(),
         fused=True,
         lr=train_config.lr,
         weight_decay=train_config.weight_decay,
     )
+
+    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader
+    )
+
+    total_steps = (
+        len(train_dataloader) * train_config.num_epochs
+    ) // train_config.gradient_accumulation_steps
+
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_warmup_steps=int(total_steps * train_config.lr_warmup),
         num_training_steps=total_steps,
     )
-
-    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = (
-        accelerator.prepare(
-            model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
-        )
-    )
+    lr_scheduler = accelerator.prepare(lr_scheduler)
 
     # TRAIN LOOP
     criterion = nn.CrossEntropyLoss(ignore_index=-100)

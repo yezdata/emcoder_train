@@ -157,6 +157,19 @@ def main(
         fused=True,
     )
 
+    # computing the weights of labels
+    pos_counts = np.sum(np.array(tokenized_train_ds["labels"]), axis=0)
+    neg_counts = len(tokenized_train_ds) - pos_counts
+
+    criterion = WeightedBCEWithLogitsLoss(pos_counts=pos_counts, neg_counts=neg_counts)
+    print("Label Weights:", criterion.pos_weights)
+
+    model, optimizer, train_dataloader, eval_dataloader, criterion = (
+        accelerator.prepare(
+            model, optimizer, train_dataloader, eval_dataloader, criterion
+        )
+    )
+
     total_steps = (
         len(train_dataloader) * train_config.num_epochs
     ) // train_config.gradient_accumulation_steps
@@ -166,19 +179,7 @@ def main(
         num_warmup_steps=int(total_steps * train_config.lr_warmup),
         num_training_steps=total_steps,
     )
-
-    # computing the weights of labels
-    pos_counts = np.sum(np.array(tokenized_train_ds["labels"]), axis=0)
-    neg_counts = len(tokenized_train_ds) - pos_counts
-
-    criterion = WeightedBCEWithLogitsLoss(pos_counts=pos_counts, neg_counts=neg_counts)
-    print("Label Weights:", criterion.pos_weights)
-
-    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler, criterion = (
-        accelerator.prepare(
-            model, optimizer, train_dataloader, eval_dataloader, lr_scheduler, criterion
-        )
-    )
+    lr_scheduler = accelerator.prepare(lr_scheduler)
 
     # TRAIN LOOP
 

@@ -87,9 +87,8 @@ class EmCoderEncoder(nn.Module):
         x = self.embed_norm(x)
         x = self.dropout(x)
 
-        # attn_mask = mask.view(x.size(0), 1, 1, x.size(1)).to(dtype=torch.bool)
         B, S = mask.shape
-        attn_mask = mask.view(B, 1, 1, S).expand(B, 1, S, S).to(dtype=torch.bool)
+        attn_mask = mask.view(B, 1, 1, S).to(dtype=torch.bool)
 
         for layer in self.layers:
             x = layer(x, attn_mask)
