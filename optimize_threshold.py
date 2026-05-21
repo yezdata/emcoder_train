@@ -40,7 +40,7 @@ def optimize_thresholds(
 
 
 def main() -> None:
-    config = ThresholdOptimizationConfig()
+    config = ThresholdOptimizationConfig()  # type: ignore
 
     data = np.load(config.input_file)
 
