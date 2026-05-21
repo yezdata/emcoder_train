@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy.special import expit
-from sklearn.metrics import classification_report, f1_score, multilabel_confusion_matrix
 from sklearn.calibration import calibration_curve
+from sklearn.metrics import classification_report, f1_score, multilabel_confusion_matrix
 
 from src.config_models import EmCoderConfig, EvalConfig
 
@@ -112,17 +112,13 @@ def load_inference_outputs(input_file: str) -> tuple:
     mean_probs = probs.mean(axis=0)  # (N, num_labels)
 
     # ENTROPY-BASED UNCERTAINTY DECOMPOSITION
-    eps = 1e-12
     # Predictive Entropy
     total_unc = -(
-        mean_probs * np.log(mean_probs + eps)
-        + (1 - mean_probs) * np.log(1 - mean_probs + eps)
+        mean_probs * np.log(mean_probs) + (1 - mean_probs) * np.log(1 - mean_probs)
     )
 
     # Expected Entropy
-    sample_entropies = -(
-        probs * np.log(probs + eps) + (1 - probs) * np.log(1 - probs + eps)
-    )
+    sample_entropies = -(probs * np.log(probs) + (1 - probs) * np.log(1 - probs))
     aleatoric_unc = sample_entropies.mean(axis=0)
 
     # Mutual Information
@@ -270,42 +266,6 @@ def plot_multilabel_cm(
     plt.close()
 
 
-def plot_flat_scatters(plot_df: pd.DataFrame, output_dir: str) -> None:
-    sns.scatterplot(
-        data=plot_df,
-        x="Epistemic Uncertainty",
-        y="Probability",
-        hue="Correct",
-        palette={True: "#2ecc71", False: "#e74c3c"},
-        alpha=0.3,
-        edgecolor=None,
-    )
-    plt.xlabel("Epistemic Uncertainty (Mutual Information)")
-    plt.ylabel("Mean Predicted Probability")
-    leg = plt.legend(title="Prediction Correct")
-    for lh in leg.legend_handles:
-        lh.set_alpha(1.0)  # type: ignore
-    plt.savefig(f"{output_dir}/epistemic_unc_scatter.png")
-    plt.close()
-
-    sns.scatterplot(
-        data=plot_df,
-        x="Aleatoric Uncertainty",
-        y="Probability",
-        hue="Correct",
-        palette={True: "#2ecc71", False: "#e74c3c"},
-        alpha=0.3,
-        edgecolor=None,
-    )
-    plt.xlabel("Aleatoric Uncertainty (Expected Entropy)")
-    plt.ylabel("Mean Predicted Probability")
-    leg = plt.legend(title="Prediction Correct")
-    for lh in leg.legend_handles:
-        lh.set_alpha(1.0)  # type: ignore
-    plt.savefig(f"{output_dir}/aleatoric_unc_scatter.png")
-    plt.close()
-
-
 def get_report_df(
     all_labels: np.ndarray, preds: np.ndarray, label_names: list
 ) -> pd.DataFrame:
@@ -354,23 +314,6 @@ def main() -> None:
     plot_multilabel_cm(
         all_labels, preds, label_names, f"{config.output_path}/confusion_matrix.png"
     )
-
-    prob_flat = mean_probs.flatten()
-    preds_flat = preds.flatten()
-    labels_flat = all_labels.flatten()
-
-    is_correct = preds_flat == labels_flat
-
-    plot_df = pd.DataFrame(
-        {
-            "Probability": prob_flat,
-            "Epistemic Uncertainty": epistemic_unc.flatten(),
-            "Aleatoric Uncertainty": aleatoric_unc.flatten(),
-            "Correct": is_correct,
-        }
-    )
-
-    plot_flat_scatters(plot_df, config.output_path)
 
     plot_per_label_scatters(
         mean_probs,
