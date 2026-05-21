@@ -65,21 +65,29 @@ class ConcreteDropout(nn.Module):
             return self.layer(x)
 
     def mc_forward_layer(self, x: torch.Tensor) -> torch.Tensor:
-        """Manual Stochastic forwards pass"""
+        """
+        Manual Stochastic forwards pass
+            - Uses Gumbel-Softmax relaxation to sample dropout masks during training
+            - Uses standard Bernoulli dropout mask during evaluation for evaluation / inference
+        """
         p = torch.sigmoid(self.log_alpha)
         eps = 1e-7
-        u = torch.empty_like(x).uniform_(0, 1)
-        concrete_prob = torch.sigmoid(
-            (
-                torch.log(p + eps)
-                - torch.log(1.0 - p + eps)
-                + torch.log(u + eps)
-                - torch.log(1.0 - u + eps)
-            )
-            / self.temperature
-        )
 
-        drop_mask = 1.0 - concrete_prob
+        if self.training:
+            u = torch.empty_like(x).uniform_(0, 1)
+            concrete_prob = torch.sigmoid(
+                (
+                    torch.log(p + eps)
+                    - torch.log(1.0 - p + eps)
+                    + torch.log(u + eps)
+                    - torch.log(1.0 - u + eps)
+                )
+                / self.temperature
+            )
+            drop_mask = 1.0 - concrete_prob
+        else:
+            drop_mask = (torch.rand_like(x) > p).to(dtype=x.dtype)
+
         x = x * drop_mask / (1.0 - p + eps)
         return self.layer(x)
 

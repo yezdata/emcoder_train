@@ -9,7 +9,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, DataCollatorWithPadding
 
 from src.config_models import EmCoderConfig, InferenceConfig
-from src.v2.emcoder import EmCoder
+from src.v2_5.emcoder import EmCoder
 
 
 def main() -> None:
