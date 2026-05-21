@@ -61,11 +61,11 @@ def evaluate_bayesian(
             probs = logits_samples.sigmoid()
             mean_probs = probs.mean(dim=0)  # (B, num_labels)
 
-            all_pred_probs.append(mean_probs.detach().cpu().numpy())
-            all_labels.append(batch["labels"].detach().cpu().numpy())
+            all_pred_probs.append(mean_probs)
+            all_labels.append(batch["labels"])
 
-    y_probs = np.concatenate(all_pred_probs, axis=0)
-    y_true = np.concatenate(all_labels, axis=0)
+    y_probs = torch.cat(all_pred_probs, dim=0).cpu().numpy()
+    y_true = torch.cat(all_labels, dim=0).cpu().numpy()
 
     print(compute_metrics(y_probs, y_true))
 
@@ -145,6 +145,7 @@ def main(
         shuffle=True,
         num_workers=6,
         pin_memory=True,
+        persistent_workers=True,
     )
     eval_dataloader = torch.utils.data.DataLoader(
         tokenized_eval_ds,  # type:ignore
@@ -153,6 +154,7 @@ def main(
         shuffle=False,
         num_workers=6,
         pin_memory=True,
+        persistent_workers=True,
     )
 
     encoder_params = model.encoder.parameters()
