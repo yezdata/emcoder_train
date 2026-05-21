@@ -20,7 +20,7 @@ from transformers import (
 from src.config_models import EmCoderConfig, EmCoderEncoderConfig, FinetuneConfig
 from src.losses import AsymmetricLoss, WeightedBCEWithLogitsLoss
 from src.utils import init_weights, save_emcoder
-from src.v2.emcoder import EmCoder
+from src.v2_5.emcoder import EmCoder
 
 
 def compute_metrics(probs: np.ndarray, labels: np.ndarray) -> dict:
@@ -106,27 +106,37 @@ def main(
         gradient_accumulation_steps=train_config.gradient_accumulation_steps,
     )
 
-    model = EmCoder(model_config)
+    tokenized_train_ds = load_from_disk(f"{train_config.tokenized_ds_dir}/train")
+    tokenized_eval_ds = load_from_disk(f"{train_config.tokenized_ds_dir}/eval")
+    num_train_examples = len(tokenized_train_ds)
+
+    # computing the weights of labels
+    pos_counts = np.sum(np.array(tokenized_train_ds["labels"]), axis=0)
+    neg_counts = len(tokenized_train_ds) - pos_counts
+
+    criterion = WeightedBCEWithLogitsLoss(pos_counts=pos_counts, neg_counts=neg_counts)
+    print("Label Weights:", criterion.pos_weights)
+
+    model = EmCoder(model_config, num_train_examples, pos_weights=criterion.pos_weights)
 
     model.encoder.load_state_dict(
         torch.load(f"{encoder_path}/encoder_only.pth", map_location=accelerator.device),
         strict=True,
     )
 
-    model.classifier.apply(init_weights)
+    model.linear1.apply(init_weights)
+    model.concrete_drop.apply(init_weights)
+
     # Scale down the final logit layer -> uniform outputs for classes
-    nn.init.trunc_normal_(model.classifier[-1].weight, std=0.005)
-    if model.classifier[-1].bias is not None:
-        nn.init.zeros_(model.classifier[-1].bias)
+    nn.init.trunc_normal_(model.concrete_drop.layer.weight, std=0.005)
+    if model.concrete_drop.layer.bias is not None:
+        nn.init.zeros_(model.concrete_drop.layer.bias)
 
     tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-base")
 
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
     )
-
-    tokenized_train_ds = load_from_disk(f"{train_config.tokenized_ds_dir}/train")
-    tokenized_eval_ds = load_from_disk(f"{train_config.tokenized_ds_dir}/eval")
 
     train_dataloader = torch.utils.data.DataLoader(
         tokenized_train_ds,  # type:ignore
@@ -146,23 +156,21 @@ def main(
     )
 
     encoder_params = model.encoder.parameters()
-    head_params = model.classifier.parameters()
+    head_params = list(model.linear1.parameters()) + list(
+        model.concrete_drop.parameters()
+    )
 
     optimizer = torch.optim.AdamW(
         [
-            {"params": encoder_params, "lr": train_config.encoder_lr},
-            {"params": head_params, "lr": train_config.head_lr},
+            {
+                "params": encoder_params,
+                "lr": train_config.encoder_lr,
+                "weight_decay": train_config.weight_decay,
+            },
+            {"params": head_params, "lr": train_config.head_lr, "weight_decay": 0.0},
         ],
-        weight_decay=train_config.weight_decay,
         fused=True,
     )
-
-    # computing the weights of labels
-    pos_counts = np.sum(np.array(tokenized_train_ds["labels"]), axis=0)
-    neg_counts = len(tokenized_train_ds) - pos_counts
-
-    criterion = WeightedBCEWithLogitsLoss(pos_counts=pos_counts, neg_counts=neg_counts)
-    print("Label Weights:", criterion.pos_weights)
 
     model, optimizer, train_dataloader, eval_dataloader, criterion = (
         accelerator.prepare(
@@ -200,7 +208,12 @@ def main(
 
             with accelerator.accumulate(model):
                 logits = model(batch["input_ids"], batch["attention_mask"])
-                loss = criterion(logits, batch["labels"])
+
+                base_loss = criterion(logits, batch["labels"])
+                cd_regularization = accelerator.unwrap_model(model).get_cd_loss(
+                    d_model=model_config.d_model
+                )
+                loss = base_loss + cd_regularization
 
                 accelerator.backward(loss)
                 optimizer.step()
@@ -211,6 +224,10 @@ def main(
                 num_batches += 1
 
             if step % 150 == 0:
+                current_p = torch.sigmoid(
+                    accelerator.unwrap_model(model).concrete_drop.log_alpha
+                ).item()
+                accelerator.print(f"Learned p: {current_p:.4f}")
                 accelerator.print(
                     f"Epoch {epoch + 1} | Step {step} | TRAIN  Loss: {epoch_loss / num_batches:.4f}"
                 )
@@ -240,7 +257,7 @@ def main(
 
 
 if __name__ == "__main__":
-    SAVE_PATH = "models/v2/emcoder"
+    SAVE_PATH = "models/v2_5/emcoder"
     ENCODER_PATH = "models/v2/pretrain/epoch_1"
 
     main(

@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from accelerate import Accelerator
 from datasets import load_from_disk
-from safetensors.torch import load_file, load_model
+from safetensors.torch import load_model
 from tqdm import tqdm
 from transformers import AutoTokenizer, DataCollatorWithPadding
 
