@@ -141,45 +141,61 @@ def plot_f1_rejection_curve(
     output_file: str,
 ) -> None:
     rejection_fractions = np.linspace(0.0, 0.5, 20)
-
     fig, ax = plt.subplots(figsize=(12, 8))
 
     all_f1_scores = {label: [] for label in label_names}
     macro_f1_scores = []
 
+    pre_sorted_indices = {}
+    for i, label in enumerate(label_names):
+        preds = preds_matrix[:, i]
+        unc_class = uncertainty[:, i]
+
+        pos_indices = np.where(preds == 1)[0]
+        neg_indices = np.where(preds == 0)[0]
+
+        sorted_pos = (
+            pos_indices[np.argsort(unc_class[pos_indices])]
+            if len(pos_indices) > 0
+            else np.array([], dtype=int)
+        )
+        sorted_neg = (
+            neg_indices[np.argsort(unc_class[neg_indices])]
+            if len(neg_indices) > 0
+            else np.array([], dtype=int)
+        )
+
+        pre_sorted_indices[i] = {
+            "pos": sorted_pos,
+            "neg": sorted_neg,
+            "total_pos_len": len(pos_indices),
+            "total_neg_len": len(neg_indices),
+        }
+
     for frac in rejection_fractions:
         current_step_f1 = []
 
         for i, label in enumerate(label_names):
-            preds = preds_matrix[:, i]
-            unc_class = uncertainty[:, i]
             labels_class = all_labels[:, i]
+            class_data = pre_sorted_indices[i]
 
-            pos_indices = np.where(preds == 1)[0]
-            neg_indices = np.where(preds == 0)[0]
+            keep_pos_count = int(class_data["total_pos_len"] * (1.0 - frac))
+            keep_neg_count = int(class_data["total_neg_len"] * (1.0 - frac))
 
-            if len(pos_indices) > 0:
-                sorted_pos = pos_indices[np.argsort(unc_class[pos_indices])]
-                keep_pos_count = int(len(pos_indices) * (1.0 - frac))
-                keep_pos = sorted_pos[:keep_pos_count]
-            else:
-                keep_pos = np.array([], dtype=int)
-
-            if len(neg_indices) > 0:
-                sorted_neg = neg_indices[np.argsort(unc_class[neg_indices])]
-                keep_neg_count = int(len(neg_indices) * (1.0 - frac))
-                keep_neg = sorted_neg[:keep_neg_count]
-            else:
-                keep_neg = np.array([], dtype=int)
-
+            keep_pos = class_data["pos"][:keep_pos_count]
+            keep_neg = class_data["neg"][:keep_neg_count]
             keep_indices = np.concatenate([keep_pos, keep_neg])
 
             if len(keep_indices) == 0:
                 all_f1_scores[label].append(np.nan)
                 continue
 
-            filt_preds = preds[keep_indices]
+            filt_preds = preds_matrix[keep_indices, i]
             filt_labels = labels_class[keep_indices]
+
+            if np.sum(filt_labels) == 0:
+                all_f1_scores[label].append(np.nan)
+                continue
 
             f1 = f1_score(filt_labels, filt_preds, zero_division=0)
             all_f1_scores[label].append(f1)
@@ -209,6 +225,9 @@ def plot_f1_rejection_curve(
         linewidth=3,
         label="Macro F1",
     )
+
+    y_ticks = np.arange(0.0, 1.1, 0.1)
+    ax.set_yticks(y_ticks)
 
     ax.set_xlabel("Rejection Fraction")
     ax.set_ylabel("F1 Score")
