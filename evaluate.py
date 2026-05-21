@@ -322,6 +322,7 @@ def get_report_df(
 
 def main() -> None:
     config = EvalConfig()  # type:ignore
+    os.makedirs(config.output_path, exist_ok=True)
 
     # load optimized thresholds
     with open(f"{config.model_path}/thresholds.json", "r") as f:

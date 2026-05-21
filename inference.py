@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from accelerate import Accelerator
 from datasets import load_from_disk
-from safetensors.torch import load_file
+from safetensors.torch import load_file, load_model
 from tqdm import tqdm
 from transformers import AutoTokenizer, DataCollatorWithPadding
 
@@ -27,8 +27,7 @@ def main() -> None:
 
     model = EmCoder(model_config)
 
-    state_dict = load_file(f"{inference_config.emcoder_path}/model.safetensors")
-    model.load_state_dict(state_dict, strict=True)
+    load_model(model, f"{inference_config.emcoder_path}/model.safetensors")
 
     tokenizer = AutoTokenizer.from_pretrained("answerdotai/ModernBERT-base")
 

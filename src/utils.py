@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
 from pydantic_settings import BaseSettings
-from safetensors.torch import save_file
+from safetensors.torch import save_model
 
 
 class RMSNorm(nn.Module):
@@ -117,7 +117,7 @@ def save_emcoder(
 
     # SAVE ONLY WHOLE MODEL
     unwrapped_model = accelerator.unwrap_model(model)
-    save_file(unwrapped_model.state_dict(), f"{save_path}/model.safetensors")
+    save_model(unwrapped_model, f"{save_path}/model.safetensors")
 
     with open(f"{save_path}/config.json", "w") as f:
         f.write(model_config.model_dump_json(indent=4))

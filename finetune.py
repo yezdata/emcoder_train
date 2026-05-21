@@ -240,8 +240,8 @@ def main(
 
 
 if __name__ == "__main__":
-    SAVE_PATH = "models/v1_5/emcoder"
-    ENCODER_PATH = "models/v1/pretrain/checkpoints/epoch_1/step_120000"
+    SAVE_PATH = "models/v2/emcoder"
+    ENCODER_PATH = "models/v2/pretrain/epoch_1"
 
     main(
         save_path=SAVE_PATH,
