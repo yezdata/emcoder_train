@@ -114,11 +114,11 @@ def load_inference_outputs(input_file: str) -> tuple:
     # ENTROPY-BASED UNCERTAINTY DECOMPOSITION
     # Predictive Entropy
     total_unc = -(
-        mean_probs * np.log(mean_probs) + (1 - mean_probs) * np.log(1 - mean_probs)
+        mean_probs * np.log2(mean_probs) + (1 - mean_probs) * np.log2(1 - mean_probs)
     )
 
     # Expected Entropy
-    sample_entropies = -(probs * np.log(probs) + (1 - probs) * np.log(1 - probs))
+    sample_entropies = -(probs * np.log2(probs) + (1 - probs) * np.log2(1 - probs))
     aleatoric_unc = sample_entropies.mean(axis=0)
 
     # Mutual Information
